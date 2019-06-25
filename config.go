@@ -34,12 +34,14 @@ func getConfig() (*config, error) {
 		return nil, err
 	}
 
+	topLevel := strings.TrimSpace(string(out))
+
 	token := os.Getenv("PROFESSOR_TOKEN")
 	if token == "" {
 		return nil, fmt.Errorf("PROFESSOR_TOKEN was empty")
 	}
 
-	base, err := git.PlainOpen("./")
+	base, err := git.PlainOpen(topLevel)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +57,6 @@ func getConfig() (*config, error) {
 		panic("remote didn't match")
 	}
 
-	topLevel := strings.TrimSpace(string(out))
 	return &config{
 		topLevel:    topLevel,
 		testPath:    path.Join(topLevel, ".git", "professor", "working"),
