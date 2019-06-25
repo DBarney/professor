@@ -34,7 +34,7 @@ func (b *Builder) GetStatus(sha string) (string, error) {
 	_, _, statusPath := b.getPaths(sha)
 	contents, err := ioutil.ReadFile(statusPath)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 	return string(contents), nil
 }
