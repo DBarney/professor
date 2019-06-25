@@ -65,6 +65,14 @@ func (l *Local) watch(path string) (<-chan *BranchEvent, error) {
 				if event.Op != fsnotify.Create || strings.HasSuffix(event.Name, ".lock") {
 					continue
 				}
+
+				stat, err := os.Stat(event.Name)
+				if err != nil {
+					panic(err)
+				}
+				if stat.IsDir() {
+					continue
+				}
 				body, err := ioutil.ReadFile(event.Name)
 				if err != nil {
 					panic(err)
