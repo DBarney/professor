@@ -109,10 +109,11 @@ func handleRemoteChanges(changes <-chan *repo.BranchEvent, pub *publisher.Publis
 		fmt.Printf("detected a remote being updated %v.\n", c.SHA)
 		go func(sha string) {
 			err := pub.Publish(sha)
-			switch err {
-			case nil:
+			if os.IsNotExist(err) {
+				return
+			} else if err == nil {
 				fmt.Println(aurora.Green("sucessfully published build results."))
-			default:
+			} else {
 				fmt.Printf("%v %v\n", aurora.Red("unable to publish results:"), err)
 			}
 		}(c.SHA)
