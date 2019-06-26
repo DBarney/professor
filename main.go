@@ -44,7 +44,11 @@ func singleRun(arg string) {
 		panic(err)
 	}
 
-	build := builder.NewBuilder(repo, config.makefile, config.buildPath, config.testPath)
+	original, err := git.PlainOpen(config.topLevel)
+	if err != nil {
+		panic(err)
+	}
+	build := builder.NewBuilder(original, repo, config.makefile, config.buildPath, config.testPath)
 
 	pub := publisher.NewPublisher(config.host, build, config.token, config.owner, config.name)
 
@@ -95,8 +99,12 @@ func headlessRun() {
 		panic(err)
 	}
 
+	original, err := git.PlainOpen(config.topLevel)
+	if err != nil {
+		panic(err)
+	}
 	// start the build process
-	build := builder.NewBuilder(repo, config.makefile, config.buildPath, config.testPath)
+	build := builder.NewBuilder(original, repo, config.makefile, config.buildPath, config.testPath)
 	go handleLocalChanges(local, build)
 
 	// start the reporting process
