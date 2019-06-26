@@ -12,6 +12,7 @@ prof {branch|tag|commit} # runs a single build and uploads the results.
 prof --comand 'make build' # override the command used to build
 prof --origin 'git@github.com:dbarney/professor' # pull changes from this remote and don't try and use the current folder as a source for changes.
 prof --auto-publish # don't wait for a remote to be updated, after the build works, upload the result
+prof --build remote/origin # build refs matching this pattern
 ```
 
 ### Example builds
@@ -27,6 +28,5 @@ A lot of other settings currently aren't exposed and are set by reading the git 
 ### future ideas?
 ```
 prof --limit-to-users 'dbarney,john' # ony run commits by these users
-prof --build remote/origin # build refs matching this pattern 
 prof --command 'make build-production' '--release './bin' # maybe create a github release? tag based maybe?
 ```
