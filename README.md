@@ -9,6 +9,7 @@ Because this is designed to be run on the same server, it can take advantage of 
 ```
 prof # runs in CI/CD mode. watches local branches for changes and runs makefile targets
 prof {branch|tag|commit} # runs a single build and uploads the results.
+prof --comand 'make build' # override the command used to build
 ```
 
 ### Example builds
@@ -24,6 +25,5 @@ A lot of other settings currently aren't exposed and are set by reading the git 
 ### future ideas?
 ```
 prof --branch origin/master # only build when this ref changes
-prof --command 'make integration-local' # change the command run when building
 prof --command 'make build-production' '--release './bin' # maybe create a github release? tag based maybe?
 ```
