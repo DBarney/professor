@@ -152,7 +152,7 @@ func (b *Builder) Build(sha string) error {
 
 	}
 	contents := []byte("success")
-	out, origErr := exec.Command("make", "-C", testPath, "prof_test").CombinedOutput()
+	out, origErr := exec.Command("make", "-C", testPath, "test").CombinedOutput()
 	if origErr != nil {
 		contents = []byte("failure")
 	}

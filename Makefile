@@ -1,2 +1,2 @@
-prof_test:
+test:
 	go test ./...
