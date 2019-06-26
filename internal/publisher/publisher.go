@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"regexp"
 	"time"
 
 	"github.com/google/go-github/github"
 	"golang.org/x/oauth2"
 )
+
+var failMatch = regexp.MustCompile("(?im)(.*fail[^\n]*\n[^\n]+)")
 
 type Publisher struct {
 	storage Storage
@@ -80,11 +83,12 @@ func (p *Publisher) sendFinalStatus(sha string) error {
 
 	files := map[github.GistFilename]github.GistFile{}
 	for name, body := range results {
+		body = wrapWithMarkdown(body, status)
 		files[github.GistFilename(name)] = github.GistFile{
 			Content: github.String(body),
 		}
 	}
-	description := fmt.Sprintf("Professor Build #(%v): %v", sha, time.Now().Format("Mon Jan 2 15:04:05 MST 2006"))
+	description := fmt.Sprintf("Professor Build for %v: %v", sha, time.Now().Format("Mon Jan 2 15:04:05 MST 2006"))
 	gist := &github.Gist{
 		Description: github.String(description),
 		Public:      github.Bool(true),
@@ -121,4 +125,57 @@ func (p *Publisher) createStatus(status, sha string, url *string) error {
 	ctx := context.Background()
 	_, _, err := p.client.Repositories.CreateStatus(ctx, p.owner, p.name, sha, &repoStatus)
 	return err
+}
+
+func wrapWithMarkdown(body, status string) string {
+	switch status {
+	case "success":
+		return addSuccessMarkdown(body)
+	case "failure":
+		return addFailureMarkdown(body)
+	case "error":
+		return addErrorMarkdown(body)
+	}
+	panic("unknown status")
+	return ""
+}
+
+func addSuccessMarkdown(body string) string {
+	return fmt.Sprintf(`# SUCCESS
+### complete output
+total time %v seconds
+
+%v
+%v
+%v`, 1, "```", body, "```")
+}
+
+func addFailureMarkdown(body string) string {
+	shortBody := failMatch.FindAllString(body, -1)
+	return fmt.Sprintf(`# FAILED
+tldr;
+%v
+%v
+%v
+
+### complete output
+total time %v seconds
+
+%v
+%v
+%v`, "```", shortBody, "```", 1, "```", body, "```")
+}
+
+func addErrorMarkdown(body string) string {
+	return fmt.Sprintf(`# ERRORED OUT
+tldr;
+
+something unexpected happened
+
+### complete output
+total time %v seconds
+
+%v
+%v
+%v`, 1, "```", body, "```")
 }
