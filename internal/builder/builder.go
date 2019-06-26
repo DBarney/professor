@@ -16,6 +16,7 @@ import (
 )
 
 var ErrNotFound = fmt.Errorf("the status was not found")
+var ErrNoChanges = fmt.Errorf("no changes were detected")
 var ErrNoMakefile = fmt.Errorf("no makefile was found")
 
 type Builder struct {
@@ -135,6 +136,10 @@ func (b *Builder) Build(sha string) error {
 		}
 	}
 
+	if len(files) == 0 {
+		return ErrNoChanges
+	}
+
 	lcp := calculateLCP(files)
 	lcp = filepath.Clean(lcp)
 
@@ -155,7 +160,7 @@ func (b *Builder) Build(sha string) error {
 	if len(b.command) > 1 {
 		args = b.command[1:]
 	}
-	fmt.Printf("running %s\n", b.command)
+	fmt.Printf("running %v %s\n", testPath, b.command)
 	command := exec.Command(c, args...)
 	command.Dir = testPath
 	out, origErr := command.CombinedOutput()

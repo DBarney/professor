@@ -67,6 +67,9 @@ func singleRun(flags *flags, arg string) {
 	case builder.ErrNoMakefile:
 		fmt.Println("no Makefile was found skipping tests.")
 		os.Exit(1)
+	case builder.ErrNoChanges:
+		fmt.Println(aurora.Yellow("no changes were detected."))
+		os.Exit(0)
 	default:
 		fmt.Printf("%v %v\n", aurora.Red("build Failed"), err)
 	}
@@ -144,6 +147,8 @@ func handleLocalChanges(changes <-chan *repo.BranchEvent, build *builder.Builder
 			fmt.Println(aurora.Green("build was sucessful!"))
 		case builder.ErrNoMakefile:
 			fmt.Println("no Makefile was found skipping tests.")
+		case builder.ErrNoChanges:
+			fmt.Println(aurora.Yellow("no changes were detected."))
 		default:
 			fmt.Println(aurora.Red("build Failed."))
 		}
