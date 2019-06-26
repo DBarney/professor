@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/google/go-github/github"
 	"golang.org/x/oauth2"
 )
 
-var failMatch = regexp.MustCompile("(?im)(.*fail[^\n]*\n[^\n]+)")
+var failMatch = regexp.MustCompile("(?i)(.*fail.*)")
 
 type Publisher struct {
 	storage Storage
@@ -155,6 +156,7 @@ func addFailureMarkdown(body string) string {
 	return fmt.Sprintf(`# FAILED
 tldr;
 %v
+# grep 'fail'
 %v
 %v
 
@@ -163,7 +165,7 @@ total time %v seconds
 
 %v
 %v
-%v`, "```", shortBody, "```", 1, "```", body, "```")
+%v`, "```", strings.Join(shortBody, "\n"), "```", 1, "```", body, "```")
 }
 
 func addErrorMarkdown(body string) string {
