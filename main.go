@@ -18,6 +18,7 @@ type flags struct {
 	command     string
 	origin      string
 	autoPublish bool
+	build       string
 }
 
 func main() {
@@ -25,6 +26,7 @@ func main() {
 	flag.StringVar(&flags.command, "command", "make test", "the command that should be run")
 	flag.StringVar(&flags.origin, "origin", "", "the remote to use as the origin, defaults to the local directory")
 	flag.BoolVar(&flags.autoPublish, "auto-publish", false, "trigger publishing when builds finish")
+	flag.StringVar(&flags.build, "build", "heads", "the refs to monitor to trigger builds")
 	flag.Parse()
 	args := flag.Args()
 	if len(args) == 0 {
@@ -100,7 +102,7 @@ func headlessRun(flags *flags) {
 	}
 	// watch for changes on local branches and remote branches
 	repository := repo.New(config.gitFolder)
-	local, err := repository.WatchLocalBranches()
+	local, err := repository.WatchLocalBranches(flags.build)
 	if err != nil {
 		panic(err)
 	}

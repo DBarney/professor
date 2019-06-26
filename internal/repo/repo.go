@@ -36,8 +36,8 @@ func (l *Local) WatchRemoteBranches() (<-chan *BranchEvent, error) {
 
 // Watch branch returns a channel that reports if something changes
 // with a local branch
-func (l *Local) WatchLocalBranches() (<-chan *BranchEvent, error) {
-	return l.watch(path.Join(l.path, "refs", "heads"))
+func (l *Local) WatchLocalBranches(refs string) (<-chan *BranchEvent, error) {
+	return l.watch(path.Join(l.path, "refs", refs))
 }
 
 func (l *Local) watch(path string) (<-chan *BranchEvent, error) {
