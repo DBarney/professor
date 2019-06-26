@@ -5,8 +5,24 @@ This was built beacuse I get really tired of waiting for tests to get triggered,
 
 Because this is designed to be run on the same server, it can take advantage of caching results of tests, builds, etc. it should be faster then starting from scratch each time.
 
-usage:
+### Usage
 ```
 prof # runs in CI/CD mode. watches local branches for changes and runs makefile targets
-prof {branch|tag|commit} # runs a single build and uploads the results if needed.
+prof {branch|tag|commit} # runs a single build and uploads the results.
+```
+
+### Example builds
+[Failure](https://gist.github.com/DBarney/d1e7920fcf6ae484d397430c1febea06)
+[Success](https://gist.github.com/DBarney/61e0f6068911f125dc377600e642290a)
+
+### configuration
+Currently the only configuration that needs to happen is the Enviroment Variable `PROFESSOR_TOKEN` needs to be set to the value of a personal access token in github with the `gist` and `repo` permissions. This is used to update statuses, and to upload gists.
+
+A lot of other settings currently aren't exposed and are set by reading the git config, and by setting fairly sane defaults. That being said, if need be in the future this can be changed with a simple PR to make them more configurable.
+
+### future ideas?
+```
+prof --branch origin/master # only build when this ref changes
+prof --command 'make integration-local' # change the command run when building
+prof --command 'make build-production' '--release './bin' # maybe create a github release? tag based maybe?
 ```
