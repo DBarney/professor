@@ -1,7 +1,9 @@
 package builder
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -163,12 +165,19 @@ func (b *Builder) Build(sha string) error {
 	fmt.Printf("running %v %s\n", testPath, b.command)
 	command := exec.Command(c, args...)
 	command.Dir = testPath
-	out, origErr := command.CombinedOutput()
+
+	// tee the output to stdout.
+	buf := bytes.Buffer{}
+	writer := io.MultiWriter(&buf, os.Stdout)
+	command.Stdout = writer
+	command.Stderr = writer
+
+	origErr := command.Run()
+	out := buf.Bytes()
 	if origErr != nil {
 		contents = []byte("failure")
 	}
 
-	fmt.Printf("%v\n", string(out))
 	err = ioutil.WriteFile(filePath, out, 0666)
 	if err != nil {
 		return err
