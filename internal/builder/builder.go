@@ -142,10 +142,9 @@ func (b *Builder) Build(sha string) error {
 	fmt.Printf("got lcp: '%v'\n", lcp)
 	// need to check each section of the path to find the closest one with a Makefile
 	testPath := b.testPath
-	for lcp != "." {
+	for lcp != "" {
 		testPath = path.Join(b.testPath, lcp)
 		makefile := path.Join(testPath, "Makefile")
-		fmt.Printf("using '%v' as base makefile\n", makefile)
 		if s, err := os.Stat(makefile); err == nil && !s.IsDir() {
 			break
 		}
