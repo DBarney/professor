@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 
@@ -13,22 +14,29 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing"
 )
 
-func main() {
+type flags struct {
+	command string
+}
 
-	if len(os.Args) == 1 {
+func main() {
+	flags := &flags{}
+	flag.StringVar(&flags.command, "command", "make test", "the command that should be run")
+	flag.Parse()
+	args := flag.Args()
+	if len(args) == 0 {
 		// we run in headless mode, building everything that changes
-		headlessRun()
-	} else if len(os.Args) == 2 {
+		headlessRun(flags)
+	} else if len(args) == 1 {
 		// try to resolve the ref to a commit and only build and publish that.
 		// should we support git style references? @~2 etc?
-		singleRun(os.Args[1])
+		singleRun(flags, args[1])
 	} else {
 		fmt.Printf("usage: prof {ref|sha|tag|branch}")
 		os.Exit(1)
 	}
 }
 
-func singleRun(arg string) {
+func singleRun(flags *flags, arg string) {
 	fmt.Printf("running single build: %v\n", arg)
 	config, err := getConfig()
 	if err != nil {
@@ -48,7 +56,7 @@ func singleRun(arg string) {
 	if err != nil {
 		panic(err)
 	}
-	build := builder.NewBuilder(original, repo, config.makefile, config.buildPath, config.testPath)
+	build := builder.NewBuilder(original, repo, flags.command, config.makefile, config.buildPath, config.testPath)
 
 	pub := publisher.NewPublisher(config.host, build, config.token, config.owner, config.name)
 
@@ -78,7 +86,7 @@ func singleRun(arg string) {
 
 }
 
-func headlessRun() {
+func headlessRun(flags *flags) {
 	config, err := getConfig()
 	if err != nil {
 		panic(err)
@@ -104,7 +112,7 @@ func headlessRun() {
 		panic(err)
 	}
 	// start the build process
-	build := builder.NewBuilder(original, repo, config.makefile, config.buildPath, config.testPath)
+	build := builder.NewBuilder(original, repo, flags.command, config.makefile, config.buildPath, config.testPath)
 	go handleLocalChanges(local, build)
 
 	// start the reporting process
