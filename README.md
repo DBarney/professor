@@ -13,6 +13,7 @@ prof {branch|tag|commit} # runs a single build and uploads the results.
 
 ### Example builds
 [Failure](https://gist.github.com/DBarney/d1e7920fcf6ae484d397430c1febea06)
+
 [Success](https://gist.github.com/DBarney/61e0f6068911f125dc377600e642290a)
 
 ### configuration

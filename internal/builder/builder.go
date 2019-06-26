@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"strings"
+	"unicode"
 
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -19,15 +21,17 @@ var ErrNoMakefile = fmt.Errorf("no makefile was found")
 type Builder struct {
 	original  *git.Repository
 	clone     *git.Repository
+	command   []string
 	makefile  string
 	buildPath string
 	testPath  string
 }
 
-func NewBuilder(original, clone *git.Repository, makefile, buildPath, testPath string) *Builder {
+func NewBuilder(original, clone *git.Repository, command, makefile, buildPath, testPath string) *Builder {
 	return &Builder{
 		original:  original,
 		clone:     clone,
+		command:   splitString(command),
 		makefile:  makefile,
 		buildPath: buildPath,
 		testPath:  testPath,
@@ -111,8 +115,6 @@ func (b *Builder) Build(sha string) error {
 		commits = append(commits, commit)
 	}
 
-	fmt.Printf("%v\n", commits)
-
 	res, err := commits[0].MergeBase(commits[1])
 	if err != nil {
 		panic(err)
@@ -120,7 +122,6 @@ func (b *Builder) Build(sha string) error {
 	if len(res) == 0 {
 		panic("unable to find merge base")
 	}
-	fmt.Printf("merge base: %v\n", res)
 	p, err := res[0].Patch(commits[0])
 
 	files := []string{}
@@ -134,12 +135,9 @@ func (b *Builder) Build(sha string) error {
 		}
 	}
 
-	fmt.Printf("files: %v\n", files)
-
 	lcp := calculateLCP(files)
 	lcp = filepath.Clean(lcp)
 
-	fmt.Printf("got lcp: '%v'\n", lcp)
 	// need to check each section of the path to find the closest one with a Makefile
 	testPath := b.testPath
 	for lcp != "" {
@@ -152,7 +150,15 @@ func (b *Builder) Build(sha string) error {
 
 	}
 	contents := []byte("success")
-	out, origErr := exec.Command("make", "-C", testPath, "test").CombinedOutput()
+	c := b.command[0]
+	args := []string{}
+	if len(b.command) > 1 {
+		args = b.command[1:]
+	}
+	fmt.Printf("running %s\n", b.command)
+	command := exec.Command(c, args...)
+	command.Dir = testPath
+	out, origErr := command.CombinedOutput()
 	if origErr != nil {
 		contents = []byte("failure")
 	}
@@ -199,4 +205,24 @@ func calculateLCP(files []string) string {
 		return ""
 	}
 	return *lcp
+}
+
+func splitString(s string) []string {
+	lastQuote := rune(0)
+	// probably some subtle bugs with null characters
+	return strings.FieldsFunc(s, func(c rune) bool {
+		switch {
+		case c == lastQuote:
+			lastQuote = rune(0)
+			return false
+		case lastQuote != rune(0):
+			return false
+		case unicode.In(c, unicode.Quotation_Mark):
+			lastQuote = c
+			return false
+		default:
+			return unicode.IsSpace(c)
+
+		}
+	})
 }
