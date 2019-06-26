@@ -31,13 +31,13 @@ func New(path string) *Local {
 }
 
 func (l *Local) WatchRemoteBranches() (<-chan *BranchEvent, error) {
-	return l.watch(path.Join(l.path, ".git", "refs", "remotes", "origin"))
+	return l.watch(path.Join(l.path, "refs", "remotes", "origin"))
 }
 
 // Watch branch returns a channel that reports if something changes
 // with a local branch
 func (l *Local) WatchLocalBranches() (<-chan *BranchEvent, error) {
-	return l.watch(path.Join(l.path, ".git", "refs", "heads"))
+	return l.watch(path.Join(l.path, "refs", "heads"))
 }
 
 func (l *Local) watch(path string) (<-chan *BranchEvent, error) {
@@ -48,7 +48,13 @@ func (l *Local) watch(path string) (<-chan *BranchEvent, error) {
 	l.watchers = append(l.watchers, watcher)
 
 	err = watcher.Add(path)
-	filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
+	if err != nil {
+		return nil, err
+	}
+	err = filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
 		if !info.IsDir() {
 			return nil
 		}

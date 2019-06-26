@@ -16,11 +16,13 @@ import (
 
 type flags struct {
 	command string
+	origin  string
 }
 
 func main() {
 	flags := &flags{}
 	flag.StringVar(&flags.command, "command", "make test", "the command that should be run")
+	flag.StringVar(&flags.origin, "origin", "", "the remote to use as the origin, defaults to the local directory")
 	flag.Parse()
 	args := flag.Args()
 	if len(args) == 0 {
@@ -29,7 +31,7 @@ func main() {
 	} else if len(args) == 1 {
 		// try to resolve the ref to a commit and only build and publish that.
 		// should we support git style references? @~2 etc?
-		singleRun(flags, args[1])
+		singleRun(flags, args[0])
 	} else {
 		fmt.Printf("usage: prof {ref|sha|tag|branch}")
 		os.Exit(1)
@@ -38,7 +40,7 @@ func main() {
 
 func singleRun(flags *flags, arg string) {
 	fmt.Printf("running single build: %v\n", arg)
-	config, err := getConfig()
+	config, err := getConfig(flags.origin)
 	if err != nil {
 		panic(err)
 	}
@@ -56,7 +58,7 @@ func singleRun(flags *flags, arg string) {
 	if err != nil {
 		panic(err)
 	}
-	build := builder.NewBuilder(original, repo, flags.command, config.makefile, config.buildPath, config.testPath)
+	build := builder.NewBuilder(original, repo, flags.command, config.buildPath, config.testPath)
 
 	pub := publisher.NewPublisher(config.host, build, config.token, config.owner, config.name)
 
@@ -90,12 +92,12 @@ func singleRun(flags *flags, arg string) {
 }
 
 func headlessRun(flags *flags) {
-	config, err := getConfig()
+	config, err := getConfig(flags.origin)
 	if err != nil {
 		panic(err)
 	}
 	// watch for changes on local branches and remote branches
-	repository := repo.New(config.topLevel)
+	repository := repo.New(config.gitFolder)
 	local, err := repository.WatchLocalBranches()
 	if err != nil {
 		panic(err)
@@ -115,7 +117,7 @@ func headlessRun(flags *flags) {
 		panic(err)
 	}
 	// start the build process
-	build := builder.NewBuilder(original, repo, flags.command, config.makefile, config.buildPath, config.testPath)
+	build := builder.NewBuilder(original, repo, flags.command, config.buildPath, config.testPath)
 	go handleLocalChanges(local, build)
 
 	// start the reporting process
@@ -156,6 +158,7 @@ func handleLocalChanges(changes <-chan *repo.BranchEvent, build *builder.Builder
 }
 
 func setupRepo(config *config) (*git.Repository, error) {
+
 	_, err := os.Stat(config.testPath)
 	if os.IsNotExist(err) {
 		fmt.Printf("cloning repo.\n")
