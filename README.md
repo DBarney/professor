@@ -10,6 +10,7 @@ Because this is designed to be run on the same server, it can take advantage of 
 prof # runs in CI/CD mode. watches local branches for changes and runs makefile targets
 prof {branch|tag|commit} # runs a single build and uploads the results.
 prof --comand 'make build' # override the command used to build
+prof --origin 'git@github.com:dbarney/professor' # pull changes from this remote and don't try and use the current folder as a source for changes.
 ```
 
 ### Example builds
@@ -24,6 +25,7 @@ A lot of other settings currently aren't exposed and are set by reading the git 
 
 ### future ideas?
 ```
-prof --branch origin/master # only build when this ref changes
+prof --limit-to-users 'dbarney,john' # ony run commits by these users
+prof --build remote/origin # build refs matching this pattern 
 prof --command 'make build-production' '--release './bin' # maybe create a github release? tag based maybe?
 ```

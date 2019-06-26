@@ -25,17 +25,15 @@ type Builder struct {
 	original  *git.Repository
 	clone     *git.Repository
 	command   []string
-	makefile  string
 	buildPath string
 	testPath  string
 }
 
-func NewBuilder(original, clone *git.Repository, command, makefile, buildPath, testPath string) *Builder {
+func NewBuilder(original, clone *git.Repository, command, buildPath, testPath string) *Builder {
 	return &Builder{
 		original:  original,
 		clone:     clone,
 		command:   splitString(command),
-		makefile:  makefile,
 		buildPath: buildPath,
 		testPath:  testPath,
 	}
