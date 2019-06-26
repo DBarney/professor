@@ -15,14 +15,16 @@ import (
 )
 
 type flags struct {
-	command string
-	origin  string
+	command     string
+	origin      string
+	autoPublish bool
 }
 
 func main() {
 	flags := &flags{}
 	flag.StringVar(&flags.command, "command", "make test", "the command that should be run")
 	flag.StringVar(&flags.origin, "origin", "", "the remote to use as the origin, defaults to the local directory")
+	flag.BoolVar(&flags.autoPublish, "auto-publish", false, "trigger publishing when builds finish")
 	flag.Parse()
 	args := flag.Args()
 	if len(args) == 0 {
@@ -102,9 +104,16 @@ func headlessRun(flags *flags) {
 	if err != nil {
 		panic(err)
 	}
-	remote, err := repository.WatchRemoteBranches()
-	if err != nil {
-		panic(err)
+	var source chan *repo.BranchEvent
+	var remote <-chan *repo.BranchEvent
+	if !flags.autoPublish {
+		remote, err = repository.WatchRemoteBranches()
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		source = make(chan *repo.BranchEvent)
+		remote = source
 	}
 
 	repo, err := setupRepo(config)
@@ -118,7 +127,7 @@ func headlessRun(flags *flags) {
 	}
 	// start the build process
 	build := builder.NewBuilder(original, repo, flags.command, config.buildPath, config.testPath)
-	go handleLocalChanges(local, build)
+	go handleLocalChanges(local, build, source)
 
 	// start the reporting process
 	pub := publisher.NewPublisher(config.host, build, config.token, config.owner, config.name)
@@ -141,7 +150,7 @@ func handleRemoteChanges(changes <-chan *repo.BranchEvent, pub *publisher.Publis
 	}
 }
 
-func handleLocalChanges(changes <-chan *repo.BranchEvent, build *builder.Builder) {
+func handleLocalChanges(changes <-chan *repo.BranchEvent, build *builder.Builder, next chan<- *repo.BranchEvent) {
 	for c := range changes {
 		fmt.Printf("detected a local branch being updated, building %v\n", c.SHA)
 		switch build.Build(c.SHA) {
@@ -149,10 +158,16 @@ func handleLocalChanges(changes <-chan *repo.BranchEvent, build *builder.Builder
 			fmt.Println(aurora.Green("build was sucessful!"))
 		case builder.ErrNoMakefile:
 			fmt.Println("no Makefile was found skipping tests.")
+			continue
 		case builder.ErrNoChanges:
 			fmt.Println(aurora.Yellow("no changes were detected."))
+			continue
 		default:
 			fmt.Println(aurora.Red("build Failed."))
+		}
+		// forward the trigger if there is a next step
+		if next != nil {
+			next <- c
 		}
 	}
 }
