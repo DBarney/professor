@@ -50,7 +50,7 @@ func (b *Builder) GetResults(sha string) (map[string]string, error) {
 		return nil, err
 	}
 	files := map[string]string{
-		"BuildResults.txt": string(contents),
+		"BuildResults.md": string(contents),
 	}
 	return files, nil
 }
