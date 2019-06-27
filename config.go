@@ -18,6 +18,7 @@ type config struct {
 	buildPath   string
 	workingPath string
 	gitFolder   string
+	refspec     string
 
 	token string
 	host  string
@@ -28,7 +29,7 @@ type config struct {
 var urlMatch = regexp.MustCompile("git@([^:]+):([^/]+)/([^.]+)[.]git")
 var pathMatch = regexp.MustCompile("([^/]+)/(.+)")
 
-func getConfig(origin string) (*config, error) {
+func getConfig(origin, build string) (*config, error) {
 	c := &config{}
 
 	c.token = os.Getenv("PROFESSOR_TOKEN")
@@ -46,6 +47,20 @@ func getConfig(origin string) (*config, error) {
 		c.name = parts[3]
 		c.topLevel = "./"
 		c.gitFolder = c.topLevel
+		switch {
+		case strings.HasPrefix(build, "remotes/origin/"):
+			rest := strings.TrimPrefix(build, "remotes/origin/")
+			// pretty standard, but this allows namespacing
+			c.refspec = fmt.Sprintf("refs/heads/%v:refs/remote/origin/%v", rest, rest)
+		case strings.HasPrefix(build, "heads/"):
+			// maybe someone will push some local branches here, so we don't
+			// do any fetching.
+			c.refspec = ""
+		case strings.HasPrefix(build, "tags/"):
+			// hey we can just build tags as well!
+			rest := strings.TrimPrefix(build, "tags/")
+			c.refspec = fmt.Sprintf("refs/tags/%v:refs/tags/%v", rest, rest)
+		}
 
 		// this really needs to be a better check.
 		if _, err := os.Stat("./HEAD"); err != nil {
@@ -88,6 +103,21 @@ func getConfig(origin string) (*config, error) {
 		c.workingPath = path.Join(c.gitFolder, "professor")
 		c.testPath = path.Join(c.workingPath, "working")
 		c.buildPath = path.Join(c.workingPath, "builds")
+		switch {
+		case strings.HasPrefix(build, "remotes/origin/"):
+			rest := strings.TrimPrefix(build, "remotes/origin/")
+			// our remote is a local disk copy which has its own remote/origin.
+			// so we fetch those ones.
+			c.refspec = fmt.Sprintf("refs/remote/origin/%v:refs/remote/origin/%v", rest, rest)
+		case strings.HasPrefix(build, "heads/"):
+			// building just the local refs
+			rest := strings.TrimPrefix(build, "heads/")
+			c.refspec = fmt.Sprintf("refs/heads/%v:refs/heads/%v", rest, rest)
+		case strings.HasPrefix(build, "tags/"):
+			// hey we can just build tags as well!
+			rest := strings.TrimPrefix(build, "tags/")
+			c.refspec = fmt.Sprintf("refs/tags/%v:refs/tags/%v", rest, rest)
+		}
 
 		base, err := git.PlainOpen(c.topLevel)
 		if err != nil {

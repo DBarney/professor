@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	"gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 )
@@ -27,15 +28,20 @@ type Builder struct {
 	command   []string
 	buildPath string
 	testPath  string
+	refspec   []config.RefSpec
 }
 
-func NewBuilder(original, clone *git.Repository, command, buildPath, testPath string) *Builder {
+func NewBuilder(original, clone *git.Repository, command, buildPath, testPath, refspec string) *Builder {
+	spec := []config.RefSpec{config.RefSpec(refspec)}
+	fmt.Printf("fetching changes according to '%v'.", refspec)
+
 	return &Builder{
 		original:  original,
 		clone:     clone,
 		command:   splitString(command),
 		buildPath: buildPath,
 		testPath:  testPath,
+		refspec:   spec,
 	}
 }
 
@@ -80,7 +86,9 @@ func (b *Builder) Build(sha string) error {
 
 	// ignoring as it will error out later when checking out if this fails
 	// and no updates is an error for some reason?
-	_ = b.clone.Fetch(&git.FetchOptions{})
+	_ = b.clone.Fetch(&git.FetchOptions{
+		RefSpecs: b.refspec,
+	})
 	tree, err := b.clone.Worktree()
 	if err != nil {
 		return err

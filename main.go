@@ -26,7 +26,7 @@ func main() {
 	flag.StringVar(&flags.command, "command", "make test", "the command that should be run")
 	flag.StringVar(&flags.origin, "origin", "", "the remote to use as the origin, defaults to the local directory")
 	flag.BoolVar(&flags.autoPublish, "auto-publish", false, "trigger publishing when builds finish")
-	flag.StringVar(&flags.build, "build", "heads", "the refs to monitor to trigger builds")
+	flag.StringVar(&flags.build, "build", "heads/*", "the refs to monitor to trigger builds")
 	flag.Parse()
 	args := flag.Args()
 	if len(args) == 0 {
@@ -44,7 +44,7 @@ func main() {
 
 func singleRun(flags *flags, arg string) {
 	fmt.Printf("running single build: %v\n", arg)
-	config, err := getConfig(flags.origin)
+	config, err := getConfig(flags.origin, flags.build)
 	if err != nil {
 		panic(err)
 	}
@@ -62,7 +62,7 @@ func singleRun(flags *flags, arg string) {
 	if err != nil {
 		panic(err)
 	}
-	build := builder.NewBuilder(original, repo, flags.command, config.buildPath, config.testPath)
+	build := builder.NewBuilder(original, repo, flags.command, config.buildPath, config.testPath, flags.build)
 
 	pub := publisher.NewPublisher(config.host, build, config.token, config.owner, config.name)
 
@@ -96,7 +96,7 @@ func singleRun(flags *flags, arg string) {
 }
 
 func headlessRun(flags *flags) {
-	config, err := getConfig(flags.origin)
+	config, err := getConfig(flags.origin, flags.build)
 	if err != nil {
 		panic(err)
 	}
@@ -128,7 +128,7 @@ func headlessRun(flags *flags) {
 		panic(err)
 	}
 	// start the build process
-	build := builder.NewBuilder(original, repo, flags.command, config.buildPath, config.testPath)
+	build := builder.NewBuilder(original, repo, flags.command, config.buildPath, config.testPath, flags.build)
 	go handleLocalChanges(local, build, source)
 
 	// start the reporting process

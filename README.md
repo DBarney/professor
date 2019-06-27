@@ -5,14 +5,19 @@ This was built beacuse I get really tired of waiting for tests to get triggered,
 
 Because this is designed to be run on the same server, it can take advantage of caching results of tests, builds, etc. it should be faster then starting from scratch each time.
 
-### Usage
+### Sample ways to run professor
 ```
 prof # runs in CI/CD mode. watches local branches for changes and runs makefile targets
 prof {branch|tag|commit} # runs a single build and uploads the results.
 prof --comand 'make build' # override the command used to build
-prof --origin 'git@github.com:dbarney/professor' # pull changes from this remote and don't try and use the current folder as a source for changes.
+prof --origin 'git@github.com:dbarney/professor.git' # pull changes from this remote and don't try and use the current folder as a source for changes.
 prof --auto-publish # don't wait for a remote to be updated, after the build works, upload the result
-prof --build remote/origin # build refs matching this pattern
+prof --build 'remotes/origin/*' # build refs matching this pattern
+
+# fun combos
+prof --build 'remotes/origin/dbarney/*' --origin git@github.com:dbarney/professor.git --auto-publish # personal ci server that can be run on a remote machine
+prof --build 'remotes/origin/team/*' --origin git@github.com:dbarney/professor.git --auto-publish # how about a ci server for your team
+prof --build remotes/origin/master --origin git@github.com:dbarney/professor.git --auto-publish --command 'make publish' # cd server that deploys changes when changes are made to master
 ```
 
 ### Example builds
@@ -27,6 +32,7 @@ A lot of other settings currently aren't exposed and are set by reading the git 
 
 ### future ideas?
 ```
-prof --limit-to-users 'dbarney,john' # ony run commits by these users
-prof --command 'make build-production' '--release './bin' # maybe create a github release? tag based maybe?
+prof --poll 1m # fetch updates every minute? anyway to get notifications to trigger a build?
+docker dbarney/prof # run in docker! even less configuration!
+prof --silent-builds # don't dump build output to console
 ```

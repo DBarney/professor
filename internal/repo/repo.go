@@ -41,6 +41,7 @@ func (l *Local) WatchLocalBranches(refs string) (<-chan *BranchEvent, error) {
 }
 
 func (l *Local) watch(path string) (<-chan *BranchEvent, error) {
+	path = strings.TrimSuffix(path, "*")
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
