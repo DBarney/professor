@@ -5,6 +5,8 @@ This was built beacuse I get really tired of waiting for tests to get triggered,
 
 Because this is designed to be run on the same server, it can take advantage of caching results of tests, builds, etc. it should be faster then starting from scratch each time.
 
+[![asciicast](https://asciinema.org/a/pAqsqN7pDzSmUpFelQdtXQst1.svg)](https://asciinema.org/a/pAqsqN7pDzSmUpFelQdtXQst1)
+
 ### Usage
 ```
 prof # runs in CI/CD mode. watches local branches for changes and runs makefile targets
