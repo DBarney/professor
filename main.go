@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/dbarney/professor/internal/builder"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/logrusorgru/aurora"
 	"gopkg.in/src-d/go-git.v4"
+	git_config "gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/http"
 )
@@ -29,7 +31,7 @@ func main() {
 	flag.StringVar(&flags.command, "command", "make test", "the command that should be run")
 	flag.StringVar(&flags.origin, "origin", "", "the remote to use as the origin, defaults to the local directory")
 	flag.BoolVar(&flags.autoPublish, "auto-publish", false, "trigger publishing when builds finish")
-	flag.StringVar(&flags.build, "build", "heads", "the refs to monitor to trigger builds")
+	flag.StringVar(&flags.build, "build", "heads/*", "the refs to monitor to trigger builds")
 	flag.DurationVar(&flags.check, "check-every", time.Duration(0), "how often to poll to changes in the origin remote")
 	flag.Parse()
 	args := flag.Args()
@@ -129,10 +131,12 @@ func headlessRun(flags *flags) {
 	if flags.check != 0 {
 		ticker := time.NewTicker(flags.check)
 		defer ticker.Stop()
+		refspec := buildRefSepc(flags.build)
 		go func() {
 			for range ticker.C {
 				fmt.Println("checking for changes")
 				err := original.Fetch(&git.FetchOptions{
+					RefSpecs: []git_config.RefSpec{git_config.RefSpec(refspec)},
 					Auth: &http.BasicAuth{
 						Username: "dbarney",
 						Password: config.token,
@@ -187,6 +191,19 @@ func handleLocalChanges(changes <-chan *repo.BranchEvent, build *builder.Builder
 			next <- c
 		}
 	}
+}
+
+func buildRefSepc(build string) string {
+	switch {
+	case strings.HasPrefix(build, "heads/"):
+		build = strings.TrimPrefix(build, "heads/")
+		return fmt.Sprintf("+refs/heads/%v:refs/remotes/origin/%v", build, build)
+	case strings.HasPrefix(build, "remotes/origin/"):
+		build = strings.TrimPrefix(build, "remotes/origin/")
+		return fmt.Sprintf("+refs/heads/%v:refs/remotes/origin/%v", build, build)
+	}
+	// don't really know what to do with this
+	return "+refs/heads/*:refs/remotes/origin/*"
 }
 
 // try and take a string and discover if it is something representing
