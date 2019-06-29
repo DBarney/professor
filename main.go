@@ -48,21 +48,19 @@ func singleRun(flags *flags, arg string) {
 	if err != nil {
 		panic(err)
 	}
-	repo, err := setupRepo(config)
-	if err != nil {
-		panic(err)
-	}
 
-	sha, err := argToSha(repo, arg)
-	if err != nil {
-		panic(err)
-	}
-
+	fmt.Printf("opening repo.\n")
 	original, err := git.PlainOpen(config.topLevel)
 	if err != nil {
 		panic(err)
 	}
-	build := builder.NewBuilder(original, repo, flags.command, config.buildPath, config.testPath)
+
+	sha, err := argToSha(original, arg)
+	if err != nil {
+		panic(err)
+	}
+
+	build := builder.NewBuilder(original, flags.command, config.buildPath, config.testPath)
 
 	pub := publisher.NewPublisher(config.host, build, config.token, config.owner, config.name)
 
@@ -77,6 +75,7 @@ func singleRun(flags *flags, arg string) {
 		fmt.Println(aurora.Yellow("no changes were detected."))
 		os.Exit(0)
 	default:
+		fmt.Printf("%v,", err)
 		fmt.Printf("%v %v\n", aurora.Red("build Failed"), err)
 	}
 	res, err := build.GetResults(sha)
@@ -118,17 +117,13 @@ func headlessRun(flags *flags) {
 		remote = source
 	}
 
-	repo, err := setupRepo(config)
-	if err != nil {
-		panic(err)
-	}
-
+	fmt.Printf("opening repo.\n")
 	original, err := git.PlainOpen(config.topLevel)
 	if err != nil {
 		panic(err)
 	}
 	// start the build process
-	build := builder.NewBuilder(original, repo, flags.command, config.buildPath, config.testPath)
+	build := builder.NewBuilder(original, flags.command, config.buildPath, config.testPath)
 	go handleLocalChanges(local, build, source)
 
 	// start the reporting process
@@ -155,7 +150,8 @@ func handleRemoteChanges(changes <-chan *repo.BranchEvent, pub *publisher.Publis
 func handleLocalChanges(changes <-chan *repo.BranchEvent, build *builder.Builder, next chan<- *repo.BranchEvent) {
 	for c := range changes {
 		fmt.Printf("detected a local branch being updated, building %v\n", c.SHA)
-		switch build.Build(c.SHA) {
+		err := build.Build(c.SHA)
+		switch err {
 		case nil:
 			fmt.Println(aurora.Green("build was sucessful!"))
 		case builder.ErrNoMakefile:
@@ -165,7 +161,7 @@ func handleLocalChanges(changes <-chan *repo.BranchEvent, build *builder.Builder
 			fmt.Println(aurora.Yellow("no changes were detected."))
 			continue
 		default:
-			fmt.Println(aurora.Red("build Failed."))
+			fmt.Printf("%v %v\n", aurora.Red("build Failed."), err)
 		}
 		// forward the trigger if there is a next step
 		if next != nil {
@@ -174,27 +170,7 @@ func handleLocalChanges(changes <-chan *repo.BranchEvent, build *builder.Builder
 	}
 }
 
-func setupRepo(config *config) (*git.Repository, error) {
-
-	_, err := os.Stat(config.testPath)
-	if os.IsNotExist(err) {
-		fmt.Printf("cloning repo.\n")
-		err = os.MkdirAll(config.workingPath, 0777)
-		if err != nil {
-			return nil, err
-		}
-		return git.PlainClone(config.testPath, false, &git.CloneOptions{
-			URL: config.topLevel,
-		})
-	} else if err != nil {
-		return nil, err
-	} else {
-		fmt.Printf("opening repo.\n")
-		return git.PlainOpen(config.testPath)
-	}
-}
-
-// try and take a string a descover if it is something representing
+// try and take a string and discover if it is something representing
 // a sha in the git repositoy
 func argToSha(repo *git.Repository, arg string) (string, error) {
 	tag, err := repo.Tag(arg)
