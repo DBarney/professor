@@ -1,3 +1,4 @@
+unexport GOPATH
 test:
 	go test ./...
 
