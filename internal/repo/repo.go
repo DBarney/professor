@@ -1,13 +1,13 @@
 package repo
 
 import (
+	"fmt"
+	"github.com/fsnotify/fsnotify"
 	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
-
-	"github.com/fsnotify/fsnotify"
 )
 
 // Local represents a local git repository.
@@ -37,10 +37,13 @@ func (l *Local) WatchRemoteBranches() (<-chan *BranchEvent, error) {
 // Watch branch returns a channel that reports if something changes
 // with a local branch
 func (l *Local) WatchLocalBranches(refs string) (<-chan *BranchEvent, error) {
+	refs = strings.TrimSuffix(refs, "/*")
+	fmt.Printf("watching %v\n", refs)
 	return l.watch(path.Join(l.path, "refs", refs))
 }
 
 func (l *Local) watch(path string) (<-chan *BranchEvent, error) {
+	path = strings.TrimSuffix(path, "/*")
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
