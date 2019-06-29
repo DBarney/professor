@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/dbarney/professor/internal/builder"
 	"github.com/dbarney/professor/internal/publisher"
@@ -12,6 +13,7 @@ import (
 	"github.com/logrusorgru/aurora"
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport/http"
 )
 
 type flags struct {
@@ -19,6 +21,7 @@ type flags struct {
 	origin      string
 	autoPublish bool
 	build       string
+	check       time.Duration
 }
 
 func main() {
@@ -27,6 +30,7 @@ func main() {
 	flag.StringVar(&flags.origin, "origin", "", "the remote to use as the origin, defaults to the local directory")
 	flag.BoolVar(&flags.autoPublish, "auto-publish", false, "trigger publishing when builds finish")
 	flag.StringVar(&flags.build, "build", "heads", "the refs to monitor to trigger builds")
+	flag.DurationVar(&flags.check, "check-every", time.Duration(0), "how often to poll to changes in the origin remote")
 	flag.Parse()
 	args := flag.Args()
 	if len(args) == 0 {
@@ -121,6 +125,21 @@ func headlessRun(flags *flags) {
 	original, err := git.PlainOpen(config.topLevel)
 	if err != nil {
 		panic(err)
+	}
+	if flags.check != 0 {
+		ticker := time.NewTicker(flags.check)
+		defer ticker.Stop()
+		go func() {
+			for range ticker.C {
+				fmt.Println("checking for changes")
+				err := original.Fetch(&git.FetchOptions{
+					Auth: &http.BasicAuth{
+						Username: "dbarney",
+						Password: config.token,
+					}})
+				fmt.Printf("fetched changes %v\n", err)
+			}
+		}()
 	}
 	// start the build process
 	build := builder.NewBuilder(original, flags.command, config.buildPath, config.testPath)
