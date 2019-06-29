@@ -29,10 +29,9 @@ type Builder struct {
 	testPath  string
 }
 
-func NewBuilder(original, clone *git.Repository, command, buildPath, testPath string) *Builder {
+func NewBuilder(original *git.Repository, command, buildPath, testPath string) *Builder {
 	return &Builder{
 		original:  original,
-		clone:     clone,
 		command:   splitString(command),
 		buildPath: buildPath,
 		testPath:  testPath,
@@ -40,7 +39,7 @@ func NewBuilder(original, clone *git.Repository, command, buildPath, testPath st
 }
 
 func (b *Builder) GetStatus(sha string) (string, error) {
-	_, _, statusPath := b.getPaths(sha)
+	_, _, statusPath, _ := b.getPaths(sha)
 	contents, err := ioutil.ReadFile(statusPath)
 	if err != nil {
 		return "", err
@@ -49,7 +48,7 @@ func (b *Builder) GetStatus(sha string) (string, error) {
 }
 
 func (b *Builder) GetResults(sha string) (map[string]string, error) {
-	_, filePath, _ := b.getPaths(sha)
+	_, filePath, _, _ := b.getPaths(sha)
 	contents, err := ioutil.ReadFile(filePath)
 	if err != nil {
 		return nil, err
@@ -60,14 +59,15 @@ func (b *Builder) GetResults(sha string) (map[string]string, error) {
 	return files, nil
 }
 
-func (b *Builder) getPaths(sha string) (string, string, string) {
+func (b *Builder) getPaths(sha string) (string, string, string, string) {
 	folder := path.Join(b.buildPath, sha[:2])
-	file := path.Join(b.buildPath, sha[2:])
+	file := path.Join(b.buildPath, sha[:2], sha[2:])
 	status := path.Join(b.buildPath, fmt.Sprintf("%v.status", sha[2:]))
-	return folder, file, status
+	worktree := path.Join(b.testPath, sha[:2], sha[2:])
+	return folder, file, status, worktree
 }
 func (b *Builder) Build(sha string) error {
-	folderPath, filePath, statusPath := b.getPaths(sha)
+	folderPath, filePath, statusPath, worktree := b.getPaths(sha)
 	err := os.MkdirAll(folderPath, 0777)
 	if err != nil {
 		return err
@@ -78,29 +78,27 @@ func (b *Builder) Build(sha string) error {
 		return err
 	}
 
-	// ignoring as it will error out later when checking out if this fails
-	// and no updates is an error for some reason?
-	_ = b.clone.Fetch(&git.FetchOptions{})
-	tree, err := b.clone.Worktree()
+	// create a temporary worktree to use for the build
+	// TODO: change to tmpdir
+	// TODO: make PR to go-git to add actual worktree support
+	o, err := exec.Command("git", "worktree", "add", worktree, sha).CombinedOutput()
+	fmt.Printf("create tree: %v %v\n", string(o), err)
 	if err != nil {
 		return err
 	}
+	defer func() {
+		e := os.RemoveAll(worktree)
+
+		o, err := exec.Command("git", "worktree", "prune").CombinedOutput()
+		fmt.Printf("create tree: %v %v %v\n", string(o), e, err)
+		fmt.Printf("cleanup: %v\n", e)
+	}()
+
 	hash := plumbing.NewHash(sha)
 	hashes := []*plumbing.Hash{
 		&hash,
 	}
-
-	err = tree.Checkout(&git.CheckoutOptions{
-		Hash:  *hashes[0],
-		Force: true,
-	})
-	if err != nil {
-		return err
-	}
-
 	// find files that have changed between master and this commit.
-	// we use the original repo, as origin/master in the clone
-	// points to the original.
 	aHash, err := b.original.ResolveRevision("refs/remotes/origin/master")
 	if err != nil {
 		panic(err)
@@ -109,7 +107,7 @@ func (b *Builder) Build(sha string) error {
 
 	var commits []*object.Commit
 	for _, hash := range hashes {
-		commit, err := b.clone.CommitObject(*hash)
+		commit, err := b.original.CommitObject(*hash)
 		if err != nil {
 			panic(err)
 		}
@@ -146,7 +144,7 @@ func (b *Builder) Build(sha string) error {
 	// need to check each section of the path to find the closest one with a Makefile
 	testPath := b.testPath
 	for lcp != "" {
-		testPath = path.Join(b.testPath, lcp)
+		testPath = path.Join(worktree, lcp)
 		makefile := path.Join(testPath, "Makefile")
 		if s, err := os.Stat(makefile); err == nil && !s.IsDir() {
 			break
