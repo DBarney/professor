@@ -12,9 +12,14 @@ Because this is designed to be run on the same server, it can take advantage of 
 prof # runs in CI/CD mode. watches local branches for changes and runs makefile targets
 prof {branch|tag|commit} # runs a single build and uploads the results.
 prof --comand 'make build' # override the command used to build
-prof --origin 'git@github.com:dbarney/professor' # pull changes from this remote and don't try and use the current folder as a source for changes.
+prof --origin 'git@github.com:dbarney/professor.git' # pull changes from this remote and don't try and use the current folder as a source for changes.
 prof --auto-publish # don't wait for a remote to be updated, after the build works, upload the result
-prof --build remote/origin # build refs matching this pattern
+prof --build 'remote/origin/*' # build refs matching this pattern
+
+# how about how to run it on a different server?
+prof --auto-publish --origin 'git@github.com:dbarney/professor.git' --build 'remote/origin/*' --poll 5m
+# what about a team/individual server?
+prof --auto-publish --origin 'git@github.com:dbarney/professor.git' --build 'remote/origin/{team}/{user}/*' --poll 5m
 ```
 
 ### Example builds
@@ -28,7 +33,5 @@ Currently the only configuration that needs to happen is the Enviroment Variable
 A lot of other settings currently aren't exposed and are set by reading the git config, and by setting fairly sane defaults. That being said, if need be in the future this can be changed with a simple PR to make them more configurable.
 
 ### future ideas?
-```
-prof --limit-to-users 'dbarney,john' # ony run commits by these users
-prof --command 'make build-production' '--release './bin' # maybe create a github release? tag based maybe?
-```
+Need to add webhook support so that polling isn't needed.
+Need to add tag fetching support.
