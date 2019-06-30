@@ -50,18 +50,28 @@ func (l *Local) watch(path string) (<-chan *BranchEvent, error) {
 	}
 	l.watchers = append(l.watchers, watcher)
 
-	err = watcher.Add(path)
+	foundPath := path
+	for {
+		_, err := os.Stat(foundPath)
+		if err == nil {
+			// this will always eventually work.
+			// as the path will either be '.' or '/'
+			break
+		}
+		foundPath = filepath.Dir(foundPath)
+	}
+	err = watcher.Add(foundPath)
 	if err != nil {
 		return nil, err
 	}
-	err = filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(foundPath, func(dir string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 		if !info.IsDir() {
 			return nil
 		}
-		return watcher.Add(path)
+		return watcher.Add(dir)
 	})
 	if err != nil {
 		return nil, err
@@ -80,13 +90,45 @@ func (l *Local) watch(path string) (<-chan *BranchEvent, error) {
 					panic(err)
 				}
 				if stat.IsDir() {
+					switch {
+					case strings.HasPrefix(event.Name, path),
+						strings.HasPrefix(path, event.Name):
+						fmt.Printf("got a new folder, %v %v\n", event.Name, path)
+						watcher.Add(event.Name)
+						// now we need to see if there are any files in this folder
+						err = filepath.Walk(event.Name, func(p string, info os.FileInfo, err error) error {
+							if info.IsDir() {
+								fmt.Printf("watching sub dir %v\n", p)
+								watcher.Add(event.Name)
+								return nil
+							}
+							if !strings.HasPrefix(p, path) {
+								return nil
+							}
+							sha, err := getSha(event.Name)
+							if err != nil {
+								return err
+							}
+							results <- &BranchEvent{
+								SHA: sha,
+							}
+							return nil
+						})
+						fmt.Printf("%v\n", err)
+					default:
+						fmt.Printf("doen't match pattern %v %v\n", event.Name, path)
+					}
 					continue
 				}
-				body, err := ioutil.ReadFile(event.Name)
+				if !strings.HasPrefix(event.Name, path) {
+					fmt.Printf("change wasn't in the right path\n")
+					continue
+				}
+
+				sha, err := getSha(event.Name)
 				if err != nil {
 					panic(err)
 				}
-				sha := strings.TrimSpace(string(body))
 				results <- &BranchEvent{
 					SHA: sha,
 				}
@@ -96,4 +138,12 @@ func (l *Local) watch(path string) (<-chan *BranchEvent, error) {
 		}
 	}()
 	return results, nil
+}
+
+func getSha(file string) (string, error) {
+	body, err := ioutil.ReadFile(file)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(body)), nil
 }
