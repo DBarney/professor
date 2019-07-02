@@ -9,8 +9,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"strings"
-	"unicode"
+	"regexp"
 
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -21,18 +20,40 @@ var ErrNotFound = fmt.Errorf("the status was not found")
 var ErrNoChanges = fmt.Errorf("no changes were detected")
 var ErrNoMakefile = fmt.Errorf("no makefile was found")
 
+var targetMatch = regexp.MustCompile(" +(.+) `([^']+)'")
+
+type Type int32
+
+type filter struct {
+	w io.Writer
+}
+
+const (
+	Start Type = iota
+	Stop
+	Message
+	Target
+)
+
+type BuildEvent struct {
+	T       Type
+	Message string
+}
+
 type Builder struct {
 	original  *git.Repository
 	clone     *git.Repository
-	command   []string
+	target    string
 	buildPath string
 	testPath  string
+
+	publish chan *BuildEvent
 }
 
-func NewBuilder(original *git.Repository, command, buildPath, testPath string) *Builder {
+func NewBuilder(original *git.Repository, target, buildPath, testPath string) *Builder {
 	return &Builder{
 		original:  original,
-		command:   splitString(command),
+		target:    target,
 		buildPath: buildPath,
 		testPath:  testPath,
 	}
@@ -59,6 +80,13 @@ func (b *Builder) GetResults(sha string) (map[string]string, error) {
 	return files, nil
 }
 
+func (b *Builder) GetStream() <-chan *BuildEvent {
+	if b.publish == nil {
+		b.publish = make(chan *BuildEvent)
+	}
+	return b.publish
+}
+
 func (b *Builder) getPaths(sha string) (string, string, string, string) {
 	folder := path.Join(b.buildPath, sha[:2])
 	file := path.Join(b.buildPath, sha[:2], sha[2:])
@@ -66,7 +94,19 @@ func (b *Builder) getPaths(sha string) (string, string, string, string) {
 	worktree := path.Join(b.testPath, sha[:2], sha[2:])
 	return folder, file, status, worktree
 }
+
+func (b *Builder) update(t Type, m string) {
+	if b.publish == nil {
+		return
+	}
+	b.publish <- &BuildEvent{
+		T:       t,
+		Message: m,
+	}
+}
 func (b *Builder) Build(sha string) error {
+	b.update(Start, sha)
+	defer b.update(Stop, sha)
 	folderPath, filePath, statusPath, worktree := b.getPaths(sha)
 	err := os.MkdirAll(folderPath, 0777)
 	if err != nil {
@@ -153,18 +193,14 @@ func (b *Builder) Build(sha string) error {
 
 	}
 	contents := []byte("success")
-	c := b.command[0]
-	args := []string{}
-	if len(b.command) > 1 {
-		args = b.command[1:]
-	}
-	fmt.Printf("running %v %s\n", testPath, b.command)
-	command := exec.Command(c, args...)
+	fmt.Printf("running %v make %s\n", testPath, b.target)
+	command := exec.Command("make", b.target, "--debug=b")
 	command.Dir = testPath
 
-	// tee the output to stdout.
+	// tee the output to stdout and to the publish channel
 	buf := bytes.Buffer{}
 	writer := io.MultiWriter(&buf, os.Stdout)
+	writer = io.MultiWriter(filter{w: writer}, b)
 	command.Stdout = writer
 	command.Stderr = writer
 
@@ -183,6 +219,40 @@ func (b *Builder) Build(sha string) error {
 		return err
 	}
 	return origErr
+}
+
+func (f filter) Write(p []byte) (int, error) {
+	lines := bytes.Split(p, []byte("\n"))
+	skipped := 0
+	for i := 0; i < len(lines); {
+		l := lines[i]
+		match := targetMatch.FindSubmatch(l)
+		if len(match) == 0 {
+			i++
+			continue
+		}
+		skipped += len(l) + 1 // +1 because of the new line character
+		lines = append(lines[:i], lines[i+1:]...)
+	}
+	p1 := bytes.Join(lines, []byte("\n"))
+	n, err := f.w.Write(p1)
+	return n + skipped, err
+}
+
+func (b *Builder) Write(p []byte) (int, error) {
+	lines := bytes.Split(p, []byte("\n"))
+	for _, l := range lines {
+		if len(l) == 0 {
+			continue
+		}
+		match := targetMatch.FindSubmatch(l)
+		if len(match) != 0 {
+			b.update(Target, string(match[2]))
+			continue
+		}
+		b.update(Message, string(l))
+	}
+	return len(p), nil
 }
 
 func calculateLCP(files []string) string {
@@ -215,24 +285,4 @@ func calculateLCP(files []string) string {
 		return ""
 	}
 	return *lcp
-}
-
-func splitString(s string) []string {
-	lastQuote := rune(0)
-	// probably some subtle bugs with null characters
-	return strings.FieldsFunc(s, func(c rune) bool {
-		switch {
-		case c == lastQuote:
-			lastQuote = rune(0)
-			return false
-		case lastQuote != rune(0):
-			return false
-		case unicode.In(c, unicode.Quotation_Mark):
-			lastQuote = c
-			return false
-		default:
-			return unicode.IsSpace(c)
-
-		}
-	})
 }
