@@ -10,7 +10,7 @@ build: test
 
 image:test
 	env GOOS=linux go build -o ./bin/prof ./*.go
-	docker build -t dbarney/professor .
+	docker build -t dan353hehe/professor .
 
 tree: a b c d e f g h i j k l m n o p q r s t u v w x y z
 
