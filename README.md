@@ -11,7 +11,7 @@ Because this is designed to be run on the same server, it can take advantage of 
 ```
 prof # runs in CI/CD mode. watches local branches for changes and runs makefile targets
 prof {branch|tag|commit} # runs a single build and uploads the results.
-prof --comand 'make build' # override the command used to build
+prof --target 'build' # override the target used to build
 prof --origin 'git@github.com:dbarney/professor.git' # pull changes from this remote and don't try and use the current folder as a source for changes.
 prof --auto-publish # don't wait for a remote to be updated, after the build works, upload the result
 prof --build 'remote/origin/*' # build refs matching this pattern
