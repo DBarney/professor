@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+<h2 id="sha">sha being built</h2>
+<h3 id="target">current target</h3>
+<code id="output"></code>
+
+<script>
+var evtSource = new EventSource("/events.source");
+
+var listen = function(e) {
+  var newElement = document.createElement("text");
+  var events = document.getElementById("output");
+
+  console.log(e);
+
+  newElement.innerHTML = e.data + "\n</br>";
+  events.appendChild(newElement);
+}
+
+var target = function(e) {
+  var events = document.getElementById("target");
+
+  console.log(e);
+
+  events.innerHTML = "target: " + e.data;
+}
+
+var clear = function(e) {
+  var sha = document.getElementById("sha");
+  sha.innerHTML = e.data + " BUILDING";
+  var events = document.getElementById("output");
+  while (events.firstChild) {
+      events.removeChild(events.firstChild);
+  }
+}
+
+var done = function(e) {
+  var sha = document.getElementById("sha");
+  sha.innerHTML = e.data + " DONE";
+}
+
+evtSource.addEventListener("output", listen)
+evtSource.addEventListener("new", clear)
+evtSource.addEventListener("done", done)
+evtSource.addEventListener("target", target)
+
+</script> 
+
+</body>
+</html>

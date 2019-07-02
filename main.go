@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dbarney/professor/internal/api"
 	"github.com/dbarney/professor/internal/builder"
 	"github.com/dbarney/professor/internal/publisher"
 	"github.com/dbarney/professor/internal/repo"
@@ -19,7 +20,7 @@ import (
 )
 
 type flags struct {
-	command     string
+	target      string
 	origin      string
 	autoPublish bool
 	build       string
@@ -28,7 +29,7 @@ type flags struct {
 
 func main() {
 	flags := &flags{}
-	flag.StringVar(&flags.command, "command", "make test", "the command that should be run")
+	flag.StringVar(&flags.target, "target", "test", "the target that should be built")
 	flag.StringVar(&flags.origin, "origin", "", "the remote to use as the origin, defaults to the local directory")
 	flag.BoolVar(&flags.autoPublish, "auto-publish", false, "trigger publishing when builds finish")
 	flag.StringVar(&flags.build, "build", "heads/*", "the refs to monitor to trigger builds")
@@ -66,7 +67,7 @@ func singleRun(flags *flags, arg string) {
 		panic(err)
 	}
 
-	build := builder.NewBuilder(original, flags.command, config.buildPath, config.testPath)
+	build := builder.NewBuilder(original, flags.target, config.buildPath, config.testPath)
 
 	pub := publisher.NewPublisher(config.host, build, config.token, config.owner, config.name)
 
@@ -146,10 +147,42 @@ func headlessRun(flags *flags) {
 			}
 		}()
 	}
+
+	// start the API
+	s := make(chan *api.Set)
+	api.Run(s)
+
 	// start the build process
-	build := builder.NewBuilder(original, flags.command, config.buildPath, config.testPath)
+	build := builder.NewBuilder(original, flags.target, config.buildPath, config.testPath)
+	stream := build.GetStream()
 	go handleLocalChanges(local, build, source)
 
+	go func() {
+		var events chan *api.Event
+		for stream := range stream {
+			switch stream.T {
+			case builder.Start:
+				events = make(chan *api.Event)
+				set := &api.Set{
+					Name:   stream.Message,
+					Events: events,
+				}
+				s <- set
+			case builder.Stop:
+				close(events)
+			case builder.Message:
+				events <- &api.Event{
+					Name: "output",
+					Data: stream.Message,
+				}
+			case builder.Target:
+				events <- &api.Event{
+					Name: "target",
+					Data: stream.Message,
+				}
+			}
+		}
+	}()
 	// start the reporting process
 	pub := publisher.NewPublisher(config.host, build, config.token, config.owner, config.name)
 	handleRemoteChanges(remote, pub)
