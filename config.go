@@ -20,6 +20,8 @@ type config struct {
 	gitFolder   string
 
 	token string
+	user  string
+
 	host  string
 	owner string
 	name  string
@@ -31,10 +33,11 @@ var pathMatch = regexp.MustCompile("([^/]+)/(.+)")
 func getConfig(origin string) (*config, error) {
 	c := &config{}
 
-	c.token = os.Getenv("PROFESSOR_TOKEN")
+	c.token = os.Getenv("GITHUB_TOKEN")
 	if c.token == "" {
-		return nil, fmt.Errorf("PROFESSOR_TOKEN was empty")
+		return nil, fmt.Errorf("GITHUB_TOKEN was empty")
 	}
+	c.user = os.Getenv("GITHUB_USER")
 	if strings.HasPrefix(origin, "git@") || strings.HasPrefix(origin, "https://") {
 		parts := urlMatch.FindStringSubmatch(origin)
 		if len(parts) != 4 {
@@ -43,6 +46,9 @@ func getConfig(origin string) (*config, error) {
 
 		c.host = parts[1]
 		c.owner = parts[2]
+		if c.user == "" {
+			c.user = c.owner
+		}
 		c.name = parts[3]
 		c.topLevel = "./"
 		c.gitFolder = c.topLevel

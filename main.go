@@ -103,7 +103,6 @@ func singleRun(flags *flags, arg string) {
 
 func headlessRun(flags *flags) {
 	config, err := getConfig(flags.origin)
-	fmt.Printf("%v %v %v\n", flags, config, err)
 	if err != nil {
 		panic(err)
 	}

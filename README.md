@@ -28,7 +28,8 @@ prof --auto-publish --origin 'git@github.com:dbarney/professor.git' --build 'rem
 [Success](https://gist.github.com/DBarney/61e0f6068911f125dc377600e642290a)
 
 ### configuration
-Currently the only configuration that needs to happen is the Enviroment Variable `PROFESSOR_TOKEN` needs to be set to the value of a personal access token in github with the `gist` and `repo` permissions. This is used to update statuses, and to upload gists.
+`GITHUB_TOKEN` - a token with gist and repo permissions
+`GITHUB_USER` - the user associated with the token.
 
 A lot of other settings currently aren't exposed and are set by reading the git config, and by setting fairly sane defaults. That being said, if need be in the future this can be changed with a simple PR to make them more configurable.
 
