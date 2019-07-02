@@ -42,7 +42,7 @@ type BuildEvent struct {
 
 type Builder struct {
 	original  *git.Repository
-	clone     *git.Repository
+	makefile  string
 	target    string
 	buildPath string
 	testPath  string
@@ -50,9 +50,10 @@ type Builder struct {
 	publish chan *BuildEvent
 }
 
-func NewBuilder(original *git.Repository, target, buildPath, testPath string) *Builder {
+func NewBuilder(original *git.Repository, makefile, target, buildPath, testPath string) *Builder {
 	return &Builder{
 		original:  original,
+		makefile:  makefile,
 		target:    target,
 		buildPath: buildPath,
 		testPath:  testPath,
@@ -177,20 +178,23 @@ func (b *Builder) Build(sha string) error {
 	if len(files) == 0 {
 		return ErrNoChanges
 	}
+	testPath := fmt.Sprintf("%v%v", b.testPath, b.makefile)
+	// if there isn't a specific makfile, search for one
+	if b.makefile == "" {
+		lcp := calculateLCP(files)
+		lcp = filepath.Clean(lcp)
+		fmt.Printf("searching for a Makefile, starting at %v\n", lcp)
 
-	lcp := calculateLCP(files)
-	lcp = filepath.Clean(lcp)
+		// need to check each section of the path to find the closest one with a Makefile
+		for lcp != "" {
+			testPath = path.Join(worktree, lcp)
+			makefile := path.Join(testPath, "Makefile")
+			if s, err := os.Stat(makefile); err == nil && !s.IsDir() {
+				break
+			}
+			lcp = filepath.Dir(lcp)
 
-	// need to check each section of the path to find the closest one with a Makefile
-	testPath := b.testPath
-	for lcp != "" {
-		testPath = path.Join(worktree, lcp)
-		makefile := path.Join(testPath, "Makefile")
-		if s, err := os.Stat(makefile); err == nil && !s.IsDir() {
-			break
 		}
-		lcp = filepath.Dir(lcp)
-
 	}
 	contents := []byte("success")
 	fmt.Printf("running %v make %s\n", testPath, b.target)

@@ -25,11 +25,13 @@ type flags struct {
 	autoPublish bool
 	build       string
 	check       time.Duration
+	makefile    string
 }
 
 func main() {
 	flags := &flags{}
 	flag.StringVar(&flags.target, "target", "test", "the target that should be built")
+	flag.StringVar(&flags.makefile, "makefile", "", "a path to a folder where a makefile should be used (the root of the repo is: '/')")
 	flag.StringVar(&flags.origin, "origin", "", "the remote to use as the origin, defaults to the local directory")
 	flag.BoolVar(&flags.autoPublish, "auto-publish", false, "trigger publishing when builds finish")
 	flag.StringVar(&flags.build, "build", "heads/*", "the refs to monitor to trigger builds")
@@ -67,7 +69,7 @@ func singleRun(flags *flags, arg string) {
 		panic(err)
 	}
 
-	build := builder.NewBuilder(original, flags.target, config.buildPath, config.testPath)
+	build := builder.NewBuilder(original, flags.makefile, flags.target, config.buildPath, config.testPath)
 
 	pub := publisher.NewPublisher(config.host, build, config.token, config.owner, config.name)
 
@@ -152,7 +154,7 @@ func headlessRun(flags *flags) {
 	api.Run(s)
 
 	// start the build process
-	build := builder.NewBuilder(original, flags.target, config.buildPath, config.testPath)
+	build := builder.NewBuilder(original, flags.makefile, flags.target, config.buildPath, config.testPath)
 	stream := build.GetStream()
 	go handleLocalChanges(local, build, source)
 
