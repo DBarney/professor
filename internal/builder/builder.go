@@ -16,9 +16,10 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 )
 
-var ErrNotFound = fmt.Errorf("the status was not found")
+var ErrNotFound = fmt.Errorf("the status was not  found")
 var ErrNoChanges = fmt.Errorf("no changes were detected")
 var ErrNoMakefile = fmt.Errorf("no makefile was found")
+var ErrNotBranchOfMaster = fmt.Errorf("no commit was found to be common between this branch and master")
 
 var targetMatch = regexp.MustCompile(" +(.+) `([^']+)'")
 
@@ -61,7 +62,7 @@ func NewBuilder(original *git.Repository, makefile, target, buildPath, testPath 
 }
 
 func (b *Builder) GetStatus(sha string) (string, error) {
-	_, _, statusPath, _ := b.getPaths(sha)
+	_, _, statusPath := b.getPaths(sha)
 	contents, err := ioutil.ReadFile(statusPath)
 	if err != nil {
 		return "", err
@@ -70,7 +71,7 @@ func (b *Builder) GetStatus(sha string) (string, error) {
 }
 
 func (b *Builder) GetResults(sha string) (map[string]string, error) {
-	_, filePath, _, _ := b.getPaths(sha)
+	_, filePath, _ := b.getPaths(sha)
 	contents, err := ioutil.ReadFile(filePath)
 	if err != nil {
 		return nil, err
@@ -88,12 +89,11 @@ func (b *Builder) GetStream() <-chan *BuildEvent {
 	return b.publish
 }
 
-func (b *Builder) getPaths(sha string) (string, string, string, string) {
+func (b *Builder) getPaths(sha string) (string, string, string) {
 	folder := path.Join(b.buildPath, sha[:2])
 	file := path.Join(b.buildPath, sha[:2], sha[2:])
 	status := path.Join(b.buildPath, fmt.Sprintf("%v.status", sha[2:]))
-	worktree := path.Join(b.testPath, sha[:2], sha[2:])
-	return folder, file, status, worktree
+	return folder, file, status
 }
 
 func (b *Builder) update(t Type, m string) {
@@ -108,7 +108,7 @@ func (b *Builder) update(t Type, m string) {
 func (b *Builder) Build(sha string) error {
 	b.update(Start, sha)
 	defer b.update(Stop, sha)
-	folderPath, filePath, statusPath, worktree := b.getPaths(sha)
+	folderPath, filePath, statusPath := b.getPaths(sha)
 	err := os.MkdirAll(folderPath, 0777)
 	if err != nil {
 		return err
@@ -120,109 +120,37 @@ func (b *Builder) Build(sha string) error {
 	}
 
 	// create a temporary worktree to use for the build
-	// TODO: change to tmpdir
-	// TODO: make PR to go-git to add actual worktree support
-	o, err := exec.Command("git", "worktree", "add", worktree, sha).CombinedOutput()
-	fmt.Printf("create tree: %v %v\n", string(o), err)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		e := os.RemoveAll(worktree)
+	return worktreeWrap(b.testPath, "worktrees", sha, func(dir string) error {
+		makefile, err := b.findMakefile(dir, sha)
 
-		o, err := exec.Command("git", "worktree", "prune").CombinedOutput()
-		fmt.Printf("create tree: %v %v %v\n", string(o), e, err)
-		fmt.Printf("cleanup: %v\n", e)
-	}()
+		contents := []byte("success")
+		fmt.Printf("running %v make %s\n", makefile, b.target)
+		command := exec.Command("make", b.target, "--debug=b")
+		command.Dir = makefile
 
-	hash := plumbing.NewHash(sha)
-	hashes := []*plumbing.Hash{
-		&hash,
-	}
-	// find files that have changed between master and this commit.
-	aHash, err := b.original.ResolveRevision("refs/remotes/origin/master")
-	if err != nil {
-		panic(err)
-	}
-	hashes = append(hashes, aHash)
+		// tee the output to stdout and to the publish channel
+		buf := bytes.Buffer{}
+		writer := io.MultiWriter(&buf, os.Stdout)
+		writer = io.MultiWriter(filter{w: writer}, b)
+		command.Stdout = writer
+		command.Stderr = writer
 
-	var commits []*object.Commit
-	for _, hash := range hashes {
-		commit, err := b.original.CommitObject(*hash)
+		origErr := command.Run()
+		out := buf.Bytes()
+		if origErr != nil {
+			contents = []byte("failure")
+		}
+
+		err = ioutil.WriteFile(filePath, out, 0666)
 		if err != nil {
-			panic(err)
+			return err
 		}
-		commits = append(commits, commit)
-	}
-
-	res, err := commits[0].MergeBase(commits[1])
-	if err != nil {
-		panic(err)
-	}
-	if len(res) == 0 {
-		panic("unable to find merge base")
-	}
-	p, err := res[0].Patch(commits[0])
-
-	files := []string{}
-	for _, diff := range p.FilePatches() {
-		to, from := diff.Files()
-		if to != nil {
-			files = append(files, to.Path())
+		err = ioutil.WriteFile(statusPath, contents, 0666)
+		if err != nil {
+			return err
 		}
-		if from != nil {
-			files = append(files, from.Path())
-		}
-	}
-
-	if len(files) == 0 {
-		return ErrNoChanges
-	}
-	testPath := fmt.Sprintf("%v%v", b.testPath, b.makefile)
-	// if there isn't a specific makfile, search for one
-	if b.makefile == "" {
-		lcp := calculateLCP(files)
-		lcp = filepath.Clean(lcp)
-		fmt.Printf("searching for a Makefile, starting at %v\n", lcp)
-
-		// need to check each section of the path to find the closest one with a Makefile
-		for lcp != "" {
-			testPath = path.Join(worktree, lcp)
-			makefile := path.Join(testPath, "Makefile")
-			if s, err := os.Stat(makefile); err == nil && !s.IsDir() {
-				break
-			}
-			lcp = filepath.Dir(lcp)
-
-		}
-	}
-	contents := []byte("success")
-	fmt.Printf("running %v make %s\n", testPath, b.target)
-	command := exec.Command("make", b.target, "--debug=b")
-	command.Dir = testPath
-
-	// tee the output to stdout and to the publish channel
-	buf := bytes.Buffer{}
-	writer := io.MultiWriter(&buf, os.Stdout)
-	writer = io.MultiWriter(filter{w: writer}, b)
-	command.Stdout = writer
-	command.Stderr = writer
-
-	origErr := command.Run()
-	out := buf.Bytes()
-	if origErr != nil {
-		contents = []byte("failure")
-	}
-
-	err = ioutil.WriteFile(filePath, out, 0666)
-	if err != nil {
-		return err
-	}
-	err = ioutil.WriteFile(statusPath, contents, 0666)
-	if err != nil {
-		return err
-	}
-	return origErr
+		return origErr
+	})
 }
 
 func (f filter) Write(p []byte) (int, error) {
@@ -289,4 +217,97 @@ func calculateLCP(files []string) string {
 		return ""
 	}
 	return *lcp
+}
+
+func (b *Builder) findMakefile(dir, sha string) (string, error) {
+	hash := plumbing.NewHash(sha)
+	hashes := []*plumbing.Hash{
+		&hash,
+	}
+	// find files that have changed between master and this commit.
+	aHash, err := b.original.ResolveRevision("refs/remotes/origin/master")
+	if err != nil {
+		return "", err
+	}
+	hashes = append(hashes, aHash)
+
+	var commits []*object.Commit
+	for _, hash := range hashes {
+		commit, err := b.original.CommitObject(*hash)
+		if err != nil {
+			return "", err
+		}
+		commits = append(commits, commit)
+	}
+	res, err := commits[0].MergeBase(commits[1])
+	if err != nil {
+		return "", err
+	}
+	if len(res) == 0 {
+		return "", ErrNotBranchOfMaster
+	}
+	p, err := res[0].Patch(commits[0])
+
+	files := []string{}
+	for _, diff := range p.FilePatches() {
+		to, from := diff.Files()
+		if to != nil {
+			files = append(files, to.Path())
+		}
+		if from != nil {
+			files = append(files, from.Path())
+		}
+	}
+	if len(files) == 0 {
+		return "", ErrNoChanges
+	}
+	// if there is a specific makefile, use it
+	if b.makefile != "" {
+		return fmt.Sprintf("%v%v", b.testPath, b.makefile), nil
+	}
+
+	lcp := calculateLCP(files)
+	lcp = filepath.Clean(lcp)
+	fmt.Printf("searching for a Makefile, starting at %v\n", lcp)
+	return makefileInPath(dir, lcp), nil
+}
+
+func makefileInPath(dir, lcp string) string {
+	// need to check each section of the path to find the
+	// longest one with a Makefile
+	testPath := path.Join(dir, lcp)
+	for lcp != "." && lcp != "" {
+		makefile := path.Join(testPath, "Makefile")
+		if s, err := os.Stat(makefile); err == nil && !s.IsDir() {
+			break
+		}
+		lcp = filepath.Dir(lcp)
+		testPath = path.Join(dir, lcp)
+	}
+	return testPath
+}
+
+func worktreeWrap(wd, base, sha string, f func(string) error) error {
+	worktree := path.Join(wd, base, sha)
+	// TODO: change to tmpdir
+	// TODO: make PR to go-git to add actual worktree support
+	cmd := exec.Command("git", "worktree", "add", worktree, sha)
+	cmd.Dir = wd
+	o, err := cmd.CombinedOutput()
+	fmt.Printf("create tree: %v %v\n", string(o), err)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		e := os.RemoveAll(worktree)
+
+		o, err := exec.Command("git", "worktree", "prune").CombinedOutput()
+		fmt.Printf("cleanup: %v %v %v\n", string(o), e, err)
+	}()
+
+	_, err = os.Stat(worktree)
+	if err != nil {
+		return fmt.Errorf("the work tree was not created correctly")
+	}
+	return f(worktree)
 }

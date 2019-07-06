@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"github.com/dbarney/professor/www"
 	"net/http"
 )
 
@@ -31,7 +32,7 @@ func Run(source <-chan *Set) {
 	}
 
 	http.HandleFunc("/events.source", a.serveEvents)
-	http.Handle("/", http.FileServer(http.Dir("./www")))
+	http.Handle("/", http.FileServer(www.AssetFile()))
 	go a.record()
 	go http.ListenAndServe(":8080", nil)
 }

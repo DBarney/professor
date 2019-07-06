@@ -1,22 +1,29 @@
-test:
+# super simplistic approach to detecting changes
+SRC_FILES := $(shell find . -path ./.git -prune -o -name '*.go' -print)
+
+# actual targets meant to be run
+test: .test
+image: .docker
+build: bin/prof
+
+.test: www/www.go $(SRC_FILES)
 	go mod download
 	go mod verify
+	go vet ./...
 	go test ./...
+	@touch .test
 
-build: test
-	@rm -rf ./bin
-	@mkdir -p ./bin
+www/www.go: www/index.html
+	@echo rebuilding static assets
+	@go-bindata -fs -pkg www '-ignore=.*[.]go' -prefix www/ -o ./www/www.go ./www/...
+
+bin/prof: .test
 	go build -o ./bin/prof ./*.go
 
-image:test
-	env GOOS=linux go build -o ./bin/prof ./*.go
+bin/prof-linux: GOOS=linux
+bin/prof-linux: .test
+	go build -o ./bin/prof-linux ./*.go
+
+.docker: bin/prof-linux Dockerfile
 	docker build -t dan353hehe/professor .
-
-tree: a b c d e f g h i j k l m n o p q r s t u v w x y z
-
-a c e g i k m o q s u w y:
-	@echo $@
-	@sleep 1
-
-b d f h j l n p r t v x z:
-	@echo $@
+	@touch .docker
