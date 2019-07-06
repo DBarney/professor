@@ -16,7 +16,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 )
 
-var ErrNotFound = fmt.Errorf("the status was not found")
+var ErrNotFound = fmt.Errorf("the status was not  found")
 var ErrNoChanges = fmt.Errorf("no changes were detected")
 var ErrNoMakefile = fmt.Errorf("no makefile was found")
 

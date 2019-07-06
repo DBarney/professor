@@ -67,9 +67,9 @@ func (p *Publisher) Publish(sha string) error {
 			time.Sleep(time.Second * 5)
 			continue
 		}
-		return p.sendFinalStatus(sha)
+		break
 	}
-	return nil
+	return p.sendFinalStatus(sha)
 }
 
 func (p *Publisher) sendFinalStatus(sha string) error {
@@ -137,7 +137,6 @@ func wrapWithMarkdown(body, status string) string {
 	case "error":
 		return addErrorMarkdown(body)
 	}
-	panic("unknown status")
 	return ""
 }
 
