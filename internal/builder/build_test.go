@@ -2,7 +2,15 @@ package builder
 
 import (
 	"bytes"
+	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
+
+	"gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
 )
 
 func TestRegex(t *testing.T) {
@@ -91,4 +99,106 @@ func TestLCP(t *testing.T) {
 		t.Fatalf("different strings should return nothing %v", lcp)
 	}
 
+}
+
+func TestGitWorktree(t *testing.T) {
+	dir, err := ioutil.TempDir("/tmp", "professor-test")
+	if err != nil {
+		t.Fatalf("unable to create test dir %v", err)
+	}
+	defer func() {
+		err = os.RemoveAll(dir)
+		if err != nil {
+			t.Fatalf("unable to remove test dir %v", err)
+		}
+	}()
+
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("unable to create git dir %v", err)
+	}
+
+	name := "example-git-file"
+	filename := filepath.Join(dir, name)
+	err = ioutil.WriteFile(filename, []byte("hello world!"), 0644)
+	if err != nil {
+		t.Fatalf("unable to create example file %v", err)
+	}
+	w, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("unable to get worktree %v", err)
+	}
+
+	_, err = w.Add(name)
+	if err != nil {
+		t.Fatalf("unable to add file %v", err)
+	}
+
+	commit, err := w.Commit("initial commit", &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "Professor",
+			Email: "prof@me.com",
+			When:  time.Now(),
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("unable to commit changes %v", err)
+	}
+	err = worktreeWrap(dir, "worktree", commit.String(), func(dir string) error {
+		info, err := os.Stat(dir)
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("it wasn't a dir %v", info)
+		}
+		body, err := ioutil.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			return err
+		}
+		if string(body) != "hello world!" {
+			return fmt.Errorf("wrong body was returend %v", string(body))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("something went wrong with the worktree %v", err)
+	}
+}
+
+func TestFindMakefile(t *testing.T) {
+	dir, err := ioutil.TempDir("/tmp", "makefile")
+	if err != nil {
+		t.Fatalf("unable to make temp dir %v", err)
+	}
+
+	lcp := filepath.Join("1", "2", "3", "4")
+	err = os.MkdirAll(filepath.Join(dir, lcp), 0777)
+	if err != nil {
+		t.Fatalf("unable to create dir tree")
+	}
+	path := makefileInPath(dir, lcp)
+	if path != dir {
+		t.Fatalf("wrong path was returned %v", path)
+	}
+	err = ioutil.WriteFile(filepath.Join(dir, "1", "Makefile"), []byte("hello world!"), 0644)
+	if err != nil {
+		t.Fatalf("unable to create example file %v", err)
+	}
+
+	path = makefileInPath(dir, lcp)
+	if path != filepath.Join(dir, "1") {
+		t.Fatalf("wrong path was returned %v", path)
+	}
+
+	err = ioutil.WriteFile(filepath.Join(dir, lcp, "Makefile"), []byte("hello world!"), 0644)
+	if err != nil {
+		t.Fatalf("unable to create example file %v", err)
+	}
+
+	path = makefileInPath(dir, lcp)
+	if path != filepath.Join(dir, lcp) {
+		t.Fatalf("wrong path was returned %v", path)
+	}
 }
