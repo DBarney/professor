@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Local represents a local git repository.
@@ -78,10 +79,13 @@ func (l *Local) watch(path string) (<-chan *BranchEvent, error) {
 	}
 	results := make(chan *BranchEvent)
 	go func() {
+		prev := ""
+		t := time.Time{}
 		for {
 			select {
 			case event := <-watcher.Events:
-				if event.Op != fsnotify.Create || strings.HasSuffix(event.Name, ".lock") {
+				fmt.Printf("got event %v\n", event)
+				if event.Op != fsnotify.Write || strings.HasSuffix(event.Name, ".lock") {
 					continue
 				}
 
@@ -129,6 +133,11 @@ func (l *Local) watch(path string) (<-chan *BranchEvent, error) {
 				if err != nil {
 					panic(err)
 				}
+				if len(sha) != 40 || sha == prev && time.Now().Sub(t) < time.Second {
+					continue
+				}
+				prev = sha
+				t = time.Now()
 				results <- &BranchEvent{
 					SHA: sha,
 				}

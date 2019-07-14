@@ -92,7 +92,7 @@ func (b *Builder) GetStream() <-chan *BuildEvent {
 func (b *Builder) getPaths(sha string) (string, string, string) {
 	folder := path.Join(b.buildPath, sha[:2])
 	file := path.Join(b.buildPath, sha[:2], sha[2:])
-	status := path.Join(b.buildPath, fmt.Sprintf("%v.status", sha[2:]))
+	status := path.Join(b.buildPath, sha[:2], fmt.Sprintf("%v.status", sha[2:]))
 	return folder, file, status
 }
 
@@ -126,6 +126,7 @@ func (b *Builder) Build(sha string) error {
 		contents := []byte("success")
 		fmt.Printf("running %v make %s\n", makefile, b.target)
 		command := exec.Command("make", b.target, "--debug=b")
+		//command := exec.Command("ls")
 		command.Dir = makefile
 
 		// tee the output to stdout and to the publish channel
@@ -288,9 +289,14 @@ func makefileInPath(dir, lcp string) string {
 }
 
 func worktreeWrap(wd, base, sha string, f func(string) error) error {
-	worktree := path.Join(wd, base, sha)
+	worktree := path.Join(base, sha)
 	// TODO: change to tmpdir
 	// TODO: make PR to go-git to add actual worktree support
+	fmt.Printf("adding worktree '%v'\n", worktree)
+	err := os.MkdirAll(worktree, 0777)
+	if err != nil {
+		return err
+	}
 	cmd := exec.Command("git", "worktree", "add", worktree, sha)
 	cmd.Dir = wd
 	o, err := cmd.CombinedOutput()
@@ -298,16 +304,20 @@ func worktreeWrap(wd, base, sha string, f func(string) error) error {
 	if err != nil {
 		return err
 	}
-	defer func() {
-		e := os.RemoveAll(worktree)
 
-		o, err := exec.Command("git", "worktree", "prune").CombinedOutput()
+	path := filepath.Join(wd, worktree)
+	defer func() {
+		e := os.RemoveAll(path)
+
+		cmd := exec.Command("git", "worktree", "prune")
+		cmd.Dir = wd
+		o, err := cmd.CombinedOutput()
 		fmt.Printf("cleanup: %v %v %v\n", string(o), e, err)
 	}()
 
-	_, err = os.Stat(worktree)
+	_, err = os.Stat(path)
 	if err != nil {
 		return fmt.Errorf("the work tree was not created correctly")
 	}
-	return f(worktree)
+	return f(path)
 }

@@ -20,10 +20,10 @@ www/www.go: www/index.html
 bin/prof: .test
 	go build -o ./bin/prof ./*.go
 
-bin/prof-linux: GOOS=linux
 bin/prof-linux: .test
-	go build -o ./bin/prof-linux ./*.go
+	GOOS=linux go build -o ./bin/prof-linux ./*.go
 
 .docker: bin/prof-linux Dockerfile
 	docker build -t dan353hehe/professor .
 	@touch .docker
+

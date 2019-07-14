@@ -145,25 +145,28 @@ func TestGitWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to commit changes %v", err)
 	}
-	err = worktreeWrap(dir, "worktree", commit.String(), func(dir string) error {
-		info, err := os.Stat(dir)
+	// ensure that the same sha can be reused multiple times
+	for i := 0; i < 10; i++ {
+		err = worktreeWrap(dir, "worktree", commit.String(), func(dir string) error {
+			info, err := os.Stat(dir)
+			if err != nil {
+				return err
+			}
+			if !info.IsDir() {
+				return fmt.Errorf("it wasn't a dir %v", info)
+			}
+			body, err := ioutil.ReadFile(filepath.Join(dir, name))
+			if err != nil {
+				return err
+			}
+			if string(body) != "hello world!" {
+				return fmt.Errorf("wrong body was returend %v", string(body))
+			}
+			return nil
+		})
 		if err != nil {
-			return err
+			t.Fatalf("something went wrong with the worktree %v", err)
 		}
-		if !info.IsDir() {
-			return fmt.Errorf("it wasn't a dir %v", info)
-		}
-		body, err := ioutil.ReadFile(filepath.Join(dir, name))
-		if err != nil {
-			return err
-		}
-		if string(body) != "hello world!" {
-			return fmt.Errorf("wrong body was returend %v", string(body))
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("something went wrong with the worktree %v", err)
 	}
 }
 
