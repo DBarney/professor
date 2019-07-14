@@ -69,7 +69,7 @@ func singleRun(flags *flags, arg string) {
 		panic(err)
 	}
 
-	build := builder.NewBuilder(original, flags.makefile, flags.target, config.buildPath, config.testPath)
+	build := builder.NewBuilder(original, flags.makefile, flags.target, config.buildPath, config.workingPath)
 
 	pub := publisher.NewPublisher(config.host, build, config.token, config.owner, config.name)
 
@@ -154,7 +154,7 @@ func headlessRun(flags *flags) {
 	api.Run(s)
 
 	// start the build process
-	build := builder.NewBuilder(original, flags.makefile, flags.target, config.buildPath, config.testPath)
+	build := builder.NewBuilder(original, flags.makefile, flags.target, config.buildPath, config.workingPath)
 	stream := build.GetStream()
 	go handleLocalChanges(local, build, source)
 

@@ -14,7 +14,6 @@ import (
 
 type config struct {
 	topLevel    string
-	testPath    string
 	buildPath   string
 	workingPath string
 	gitFolder   string
@@ -71,7 +70,6 @@ func getConfig(origin string) (*config, error) {
 			}
 		}
 
-		c.testPath = path.Join(c.topLevel)
 		c.buildPath = path.Join(c.topLevel, "professor", "builds")
 		c.workingPath = path.Join(c.topLevel, "professor")
 
@@ -92,7 +90,6 @@ func getConfig(origin string) (*config, error) {
 
 		c.gitFolder = path.Join(c.topLevel, ".git")
 		c.workingPath = path.Join(c.gitFolder, "professor")
-		c.testPath = path.Join(c.workingPath, "working")
 		c.buildPath = path.Join(c.workingPath, "builds")
 
 		base, err := git.PlainOpen(c.topLevel)
