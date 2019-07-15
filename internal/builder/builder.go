@@ -122,7 +122,12 @@ func (b *Builder) Build(sha string) error {
 	// create a temporary worktree to use for the build
 	return worktreeWrap(b.testPath, "worktrees", sha, func(dir string) error {
 		makefile, err := b.findMakefile(dir, sha)
-
+		if err != nil {
+			return err
+		}
+		if b.makefile != "" {
+			makefile = filepath.Join(dir, b.makefile)
+		}
 		contents := []byte("success")
 		fmt.Printf("running %v make %s\n", makefile, b.target)
 		command := exec.Command("make", b.target, "--debug=b")
