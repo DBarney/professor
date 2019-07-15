@@ -51,29 +51,12 @@ func (l *Local) watch(path string) (<-chan *BranchEvent, error) {
 	}
 	l.watchers = append(l.watchers, watcher)
 
-	foundPath := path
-	for {
-		_, err := os.Stat(foundPath)
-		if err == nil {
-			// this will always eventually work.
-			// as the path will either be '.' or '/'
-			break
-		}
-		foundPath = filepath.Dir(foundPath)
-	}
+	foundPath := resolvePath(path)
 	err = watcher.Add(foundPath)
 	if err != nil {
 		return nil, err
 	}
-	err = filepath.Walk(foundPath, func(dir string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() {
-			return nil
-		}
-		return watcher.Add(dir)
-	})
+	err = watchPath(watcher, foundPath, path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -85,43 +68,24 @@ func (l *Local) watch(path string) (<-chan *BranchEvent, error) {
 			select {
 			case event := <-watcher.Events:
 				fmt.Printf("got event %v\n", event)
-				if event.Op != fsnotify.Write || strings.HasSuffix(event.Name, ".lock") {
+				// everything above Write is not something we are
+				// interested in.
+				if event.Op > fsnotify.Write || strings.HasSuffix(event.Name, ".lock") {
 					continue
 				}
 
 				stat, err := os.Stat(event.Name)
 				if err != nil {
-					panic(err)
+					// the item no longer exists, nothing to see here
+					continue
 				}
-				if stat.IsDir() {
-					switch {
-					case strings.HasPrefix(event.Name, path),
-						strings.HasPrefix(path, event.Name):
-						fmt.Printf("got a new folder, %v %v\n", event.Name, path)
-						watcher.Add(event.Name)
-						// now we need to see if there are any files in this folder
-						err = filepath.Walk(event.Name, func(p string, info os.FileInfo, err error) error {
-							if info.IsDir() {
-								fmt.Printf("watching sub dir %v\n", p)
-								watcher.Add(event.Name)
-								return nil
-							}
-							if !strings.HasPrefix(p, path) {
-								return nil
-							}
-							sha, err := getSha(event.Name)
-							if err != nil {
-								return err
-							}
-							results <- &BranchEvent{
-								SHA: sha,
-							}
-							return nil
-						})
-						fmt.Printf("%v\n", err)
-					default:
-						fmt.Printf("doen't match pattern %v %v\n", event.Name, path)
-					}
+				if stat.IsDir() &&
+					(strings.HasPrefix(event.Name, path) ||
+						strings.HasPrefix(path, event.Name)) {
+					fmt.Printf("got a new folder, %v %v\n", event.Name, path)
+					watcher.Add(event.Name)
+					err = watchPath(watcher, event.Name, path, watcher.Events)
+					fmt.Printf("%v\n", err)
 					continue
 				}
 				if !strings.HasPrefix(event.Name, path) {
@@ -149,6 +113,40 @@ func (l *Local) watch(path string) (<-chan *BranchEvent, error) {
 	return results, nil
 }
 
+func watchPath(watcher *fsnotify.Watcher, path string, prefix string, events chan fsnotify.Event) error {
+	return filepath.Walk(path, func(dir string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !strings.HasPrefix(prefix, dir) && !strings.HasPrefix(dir, prefix) {
+			return nil
+		}
+		if info.IsDir() {
+			return watcher.Add(dir)
+		}
+		if events == nil {
+			return nil
+		}
+		events <- fsnotify.Event{
+			Name: dir,
+			Op:   fsnotify.Write,
+		}
+		return nil
+	})
+}
+
+func resolvePath(path string) string {
+	for {
+		_, err := os.Stat(path)
+		if err == nil {
+			// this will always eventually work.
+			// as the path will either be '.' or '/'
+			break
+		}
+		path = filepath.Dir(path)
+	}
+	return path
+}
 func getSha(file string) (string, error) {
 	body, err := ioutil.ReadFile(file)
 	if err != nil {
