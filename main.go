@@ -11,6 +11,8 @@ import (
 	"github.com/dbarney/professor/internal/builder"
 	"github.com/dbarney/professor/internal/publisher"
 	"github.com/dbarney/professor/internal/repo"
+	"github.com/dbarney/professor/internal/storage"
+	"github.com/dbarney/professor/types"
 
 	"github.com/logrusorgru/aurora"
 	"gopkg.in/src-d/go-git.v4"
@@ -69,9 +71,15 @@ func singleRun(flags *flags, arg string) {
 		panic(err)
 	}
 
+	// start the store
+	store, err := storage.New(config.workingPath)
+	if err != nil {
+		panic(err)
+	}
+
 	build := builder.NewBuilder(original, flags.makefile, flags.target, config.buildPath, config.workingPath)
 
-	pub := publisher.NewPublisher(config.host, build, config.token, config.owner, config.name)
+	pub := publisher.NewPublisher(config.host, store, config.token, config.owner, config.name)
 
 	err = build.Build(sha)
 	switch err {
@@ -86,10 +94,6 @@ func singleRun(flags *flags, arg string) {
 	default:
 		fmt.Printf("%v,", err)
 		fmt.Printf("%v %v\n", aurora.Red("build Failed"), err)
-	}
-	res, err := build.GetResults(sha)
-	if err == nil {
-		fmt.Printf("\noutput: \n%v\n", res["BuildResults.txt"])
 	}
 
 	err = pub.Publish(sha)
@@ -149,9 +153,15 @@ func headlessRun(flags *flags) {
 		}()
 	}
 
+	// start the store
+	store, err := storage.New(config.workingPath)
+	if err != nil {
+		panic(err)
+	}
+
 	// start the API
-	s := make(chan *api.Set)
-	api.Run(s)
+	s := make(chan *types.Event)
+	api.Run(s, store)
 
 	// start the build process
 	build := builder.NewBuilder(original, flags.makefile, flags.target, config.buildPath, config.workingPath)
@@ -159,33 +169,24 @@ func headlessRun(flags *flags) {
 	go handleLocalChanges(local, build, source)
 
 	go func() {
-		var events chan *api.Event
-		for stream := range stream {
-			switch stream.T {
-			case builder.Start:
-				events = make(chan *api.Event)
-				set := &api.Set{
-					Name:   stream.Message,
-					Events: events,
+		for event := range stream {
+			switch event.Status {
+			case types.Pending:
+				err := store.Create(event.Sha, event)
+				if err != nil {
+					panic(err)
 				}
-				s <- set
-			case builder.Stop:
-				close(events)
-			case builder.Message:
-				events <- &api.Event{
-					Name: "output",
-					Data: stream.Message,
-				}
-			case builder.Target:
-				events <- &api.Event{
-					Name: "target",
-					Data: stream.Message,
+			default:
+				err := store.Append(event.Sha, event)
+				if err != nil {
+					panic(err)
 				}
 			}
+			s <- event
 		}
 	}()
 	// start the reporting process
-	pub := publisher.NewPublisher(config.host, build, config.token, config.owner, config.name)
+	pub := publisher.NewPublisher(config.host, store, config.token, config.owner, config.name)
 	handleRemoteChanges(remote, pub)
 }
 
