@@ -1,15 +1,15 @@
 package builder
 
 import (
-	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
+
+	"github.com/dbarney/professor/types"
 
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
@@ -23,24 +23,6 @@ var ErrNotBranchOfMaster = fmt.Errorf("no commit was found to be common between 
 
 var targetMatch = regexp.MustCompile(" +(.+) `([^']+)'")
 
-type Type int32
-
-type filter struct {
-	w io.Writer
-}
-
-const (
-	Start Type = iota
-	Stop
-	Message
-	Target
-)
-
-type BuildEvent struct {
-	T       Type
-	Message string
-}
-
 type Builder struct {
 	original  *git.Repository
 	makefile  string
@@ -48,7 +30,7 @@ type Builder struct {
 	buildPath string
 	testPath  string
 
-	publish chan *BuildEvent
+	publish chan *types.Event
 }
 
 func NewBuilder(original *git.Repository, makefile, target, buildPath, testPath string) *Builder {
@@ -61,66 +43,34 @@ func NewBuilder(original *git.Repository, makefile, target, buildPath, testPath 
 	}
 }
 
-func (b *Builder) GetStatus(sha string) (string, error) {
-	_, _, statusPath := b.getPaths(sha)
-	contents, err := ioutil.ReadFile(statusPath)
-	if err != nil {
-		return "", err
-	}
-	return string(contents), nil
-}
-
-func (b *Builder) GetResults(sha string) (map[string]string, error) {
-	_, filePath, _ := b.getPaths(sha)
-	contents, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		return nil, err
-	}
-	files := map[string]string{
-		"BuildResults.md": string(contents),
-	}
-	return files, nil
-}
-
-func (b *Builder) GetStream() <-chan *BuildEvent {
+func (b *Builder) GetStream() <-chan *types.Event {
 	if b.publish == nil {
-		b.publish = make(chan *BuildEvent)
+		b.publish = make(chan *types.Event)
 	}
 	return b.publish
 }
 
-func (b *Builder) getPaths(sha string) (string, string, string) {
-	folder := path.Join(b.buildPath, sha[:2])
-	file := path.Join(b.buildPath, sha[:2], sha[2:])
-	status := path.Join(b.buildPath, sha[:2], fmt.Sprintf("%v.status", sha[2:]))
-	return folder, file, status
-}
-
-func (b *Builder) update(t Type, m string) {
+func (b *Builder) update(status types.Status, sha string, data []byte) {
 	if b.publish == nil {
 		return
 	}
-	b.publish <- &BuildEvent{
-		T:       t,
-		Message: m,
+	b.publish <- &types.Event{
+		Sha:    sha,
+		Status: status,
+		Data:   data,
 	}
 }
 func (b *Builder) Build(sha string) error {
-	b.update(Start, sha)
-	defer b.update(Stop, sha)
-	folderPath, filePath, statusPath := b.getPaths(sha)
-	err := os.MkdirAll(folderPath, 0777)
-	if err != nil {
-		return err
-	}
+	b.update(types.Pending, sha, nil)
 
-	err = ioutil.WriteFile(statusPath, []byte("pending"), 0666)
+	folder := path.Join(b.buildPath, sha[:2])
+	err := os.MkdirAll(folder, 0777)
 	if err != nil {
 		return err
 	}
 
 	// create a temporary worktree to use for the build
-	return worktreeWrap(b.testPath, "worktrees", sha, func(dir string) error {
+	err = worktreeWrap(b.testPath, "worktrees", sha, func(dir string) error {
 		makefile, err := b.findMakefile(dir, sha)
 		if err != nil {
 			return err
@@ -128,69 +78,24 @@ func (b *Builder) Build(sha string) error {
 		if b.makefile != "" {
 			makefile = filepath.Join(dir, b.makefile)
 		}
-		contents := []byte("success")
 		fmt.Printf("running %v make %s\n", makefile, b.target)
 		command := exec.Command("make", b.target, "--debug=b")
-		//command := exec.Command("ls")
 		command.Dir = makefile
 
 		// tee the output to stdout and to the publish channel
-		buf := bytes.Buffer{}
-		writer := io.MultiWriter(&buf, os.Stdout)
-		writer = io.MultiWriter(filter{w: writer}, b)
+		writer := io.MultiWriter(filter{w: os.Stdout}, updater{b: b, sha: sha})
 		command.Stdout = writer
 		command.Stderr = writer
 
-		origErr := command.Run()
-		out := buf.Bytes()
-		if origErr != nil {
-			contents = []byte("failure")
-		}
-
-		err = ioutil.WriteFile(filePath, out, 0666)
-		if err != nil {
-			return err
-		}
-		err = ioutil.WriteFile(statusPath, contents, 0666)
-		if err != nil {
-			return err
-		}
-		return origErr
+		return command.Run()
 	})
-}
 
-func (f filter) Write(p []byte) (int, error) {
-	lines := bytes.Split(p, []byte("\n"))
-	skipped := 0
-	for i := 0; i < len(lines); {
-		l := lines[i]
-		match := targetMatch.FindSubmatch(l)
-		if len(match) == 0 {
-			i++
-			continue
-		}
-		skipped += len(l) + 1 // +1 because of the new line character
-		lines = append(lines[:i], lines[i+1:]...)
+	if err != nil {
+		b.update(types.Failure, sha, nil)
+		return err
 	}
-	p1 := bytes.Join(lines, []byte("\n"))
-	n, err := f.w.Write(p1)
-	return n + skipped, err
-}
-
-func (b *Builder) Write(p []byte) (int, error) {
-	lines := bytes.Split(p, []byte("\n"))
-	for _, l := range lines {
-		if len(l) == 0 {
-			continue
-		}
-		match := targetMatch.FindSubmatch(l)
-		if len(match) != 0 {
-			b.update(Target, string(match[2]))
-			continue
-		}
-		b.update(Message, string(l))
-	}
-	return len(p), nil
+	b.update(types.Success, sha, nil)
+	return nil
 }
 
 func calculateLCP(files []string) string {

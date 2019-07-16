@@ -28,8 +28,9 @@ var target = function(e) {
 }
 
 var clear = function(e) {
+	console.log(e)
   var sha = document.getElementById("sha");
-  sha.innerHTML = e.data + " BUILDING";
+  sha.innerHTML = evtSource.lastEventId + " BUILDING";
   var events = document.getElementById("output");
   while (events.firstChild) {
       events.removeChild(events.firstChild);
@@ -38,12 +39,13 @@ var clear = function(e) {
 
 var done = function(e) {
   var sha = document.getElementById("sha");
-  sha.innerHTML = e.data + " DONE";
+  sha.innerHTML = evtSource.lastEventId + " DONE";
 }
 
-evtSource.addEventListener("output", listen)
-evtSource.addEventListener("new", clear)
-evtSource.addEventListener("done", done)
+evtSource.addEventListener("log", listen)
+evtSource.addEventListener("pending", clear)
+evtSource.addEventListener("success", done)
+evtSource.addEventListener("failure", done)
 evtSource.addEventListener("target", target)
 
 </script> 
