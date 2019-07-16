@@ -6,7 +6,7 @@ test: .test
 image: .docker
 build: bin/prof
 
-.test: www/www.go $(SRC_FILES)
+.test: www/www.go internal/publisher/static.go $(SRC_FILES)
 	go mod download
 	go mod verify
 	go vet ./...
@@ -14,8 +14,13 @@ build: bin/prof
 	@touch .test
 
 www/www.go: www/index.html
-	@echo rebuilding static assets
+	@echo rebuilding static html assets
 	@go-bindata -fs -pkg www '-ignore=.*[.]go' -prefix www/ -o ./www/www.go ./www/...
+
+internal/publisher/static.go: internal/publisher/error.md internal/publisher/failure.md internal/publisher/success.md
+	@echo rebuilding markdown assets
+	@go-bindata -fs -pkg publisher '-ignore=.*[.]go' -prefix internal/publisher/ -o ./internal/publisher/static.go ./internal/publisher/...
+	
 
 bin/prof: .test
 	go build -o ./bin/prof ./*.go

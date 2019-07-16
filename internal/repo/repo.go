@@ -67,7 +67,6 @@ func (l *Local) watch(path string) (<-chan *BranchEvent, error) {
 		for {
 			select {
 			case event := <-watcher.Events:
-				fmt.Printf("got event %v\n", event)
 				// everything above Write is not something we are
 				// interested in.
 				if event.Op > fsnotify.Write || strings.HasSuffix(event.Name, ".lock") {
