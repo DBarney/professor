@@ -1,61 +1,51 @@
 package publisher
 
 import (
-	"fmt"
+	"bytes"
+	"regexp"
 	"strings"
+	"text/template"
+	"time"
 
 	"github.com/dbarney/professor/types"
 )
 
-func wrapWithMarkdown(body string, status types.Status) string {
+var (
+	funcs = template.FuncMap{
+		"Summarize": summarize,
+	}
+
+	success = template.Must(template.New("success.md").Funcs(funcs).Parse(string(MustAsset("success.md"))))
+	failure = template.Must(template.New("failure.md").Funcs(funcs).Parse(string(MustAsset("failure.md"))))
+	errored = template.Must(template.New("error.md").Funcs(funcs).Parse(string(MustAsset("error.md"))))
+
+	failMatch = regexp.MustCompile("(?i)(.*fail.*)")
+)
+
+// Result is used to pass data to the templates
+type Result struct {
+	Output   string
+	Duration time.Duration
+}
+
+func wrapWithMarkdown(res Result, status types.Status) (string, error) {
+	buf := &bytes.Buffer{}
+	var err error
 	switch status {
 	case types.Success:
-		return addSuccessMarkdown(body)
+		err = success.Execute(buf, res)
 	case types.Failure:
-		return addFailureMarkdown(body)
+		err = failure.Execute(buf, res)
 	case types.Error:
-		return addErrorMarkdown(body)
+		err = errored.Execute(buf, res)
 	}
-	return ""
+	return string(buf.Bytes()), err
 }
 
-func addSuccessMarkdown(body string) string {
-	return fmt.Sprintf(`# SUCCESS
-### complete output
-total time %v seconds
-
-%v
-%v
-%v`, 1, "```", body, "```")
-}
-
-func addFailureMarkdown(body string) string {
-	shortBody := failMatch.FindAllString(body, -1)
-	return fmt.Sprintf(`# FAILED
-tldr;
-%v
-# grep 'fail'
-%v
-%v
-
-### complete output
-total time %v seconds
-
-%v
-%v
-%v`, "```", strings.Join(shortBody, "\n"), "```", 1, "```", body, "```")
-}
-
-func addErrorMarkdown(body string) string {
-	return fmt.Sprintf(`# ERRORED OUT
-tldr;
-
-something unexpected happened
-
-### complete output
-total time %v seconds
-
-%v
-%v
-%v`, 1, "```", body, "```")
+// it would be really nice if this was a bit smarter.
+// like actually detect which lines were important using
+// a smart ranking function of some sort
+func summarize(s string) string {
+	summarized := failMatch.FindAllString(s, -1)
+	return strings.Join(summarized, "\n")
 }

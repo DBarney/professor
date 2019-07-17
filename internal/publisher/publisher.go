@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"regexp"
 	"time"
 
 	"github.com/dbarney/professor/internal/storage"
@@ -13,8 +12,6 @@ import (
 	"github.com/google/go-github/github"
 	"golang.org/x/oauth2"
 )
-
-var failMatch = regexp.MustCompile("(?i)(.*fail.*)")
 
 // Publisher holds the configuration for publishing results
 // to a gist on github
@@ -93,9 +90,16 @@ func (p *Publisher) sendFinalStatus(sha string) error {
 	}
 	body = body[1:]
 
+	file, err := wrapWithMarkdown(Result{
+		Output: string(body),
+	}, event.Status)
+
+	if err != nil {
+		return err
+	}
 	files := map[github.GistFilename]github.GistFile{
 		"BuildResults.md": github.GistFile{
-			Content: github.String(wrapWithMarkdown(string(body), event.Status)),
+			Content: github.String(file),
 		},
 	}
 
