@@ -78,8 +78,10 @@ func (p *Publisher) sendFinalStatus(sha string) error {
 		return err
 	}
 
-	elem := collection.Last(types.StatusOnly)
-	event := elem.(*types.Event)
+	lastElem := collection.Last(types.StatusOnly)
+	firstElem := collection.First(types.StatusOnly)
+	lastEvent := lastElem.(*types.Event)
+	firstEvent := firstElem.(*types.Event)
 	logs := collection.Take(types.LogOnly)
 
 	body := []byte{}
@@ -91,8 +93,9 @@ func (p *Publisher) sendFinalStatus(sha string) error {
 	body = body[1:]
 
 	file, err := wrapWithMarkdown(Result{
-		Output: string(body),
-	}, event.Status)
+		Output:   string(body),
+		Duration: lastEvent.Time.Sub(firstEvent.Time),
+	}, lastEvent.Status)
 
 	if err != nil {
 		return err
@@ -114,7 +117,7 @@ func (p *Publisher) sendFinalStatus(sha string) error {
 	if err != nil {
 		return err
 	}
-	return p.createStatus(event.Status, sha, gist.HTMLURL)
+	return p.createStatus(lastEvent.Status, sha, gist.HTMLURL)
 }
 
 func (p *Publisher) createStatus(status types.Status, sha string, url *string) error {

@@ -1,5 +1,9 @@
 package types
 
+import (
+	"time"
+)
+
 // Status holds the results of the build
 type Status uint
 
@@ -18,6 +22,7 @@ type Event struct {
 	Sha    string
 	Status Status
 	Data   []byte
+	Time   time.Time
 }
 
 func StatusOnly(e interface{}) bool {

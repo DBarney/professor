@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"time"
 
 	"github.com/dbarney/professor/types"
 
@@ -58,6 +59,7 @@ func (b *Builder) update(status types.Status, sha string, data []byte) {
 		Sha:    sha,
 		Status: status,
 		Data:   data,
+		Time:   time.Now(),
 	}
 }
 func (b *Builder) Build(sha string) error {
