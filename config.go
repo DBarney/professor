@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path"
 	"regexp"
+	"runtime/debug"
 	"strings"
 
 	"gopkg.in/src-d/go-git.v4"
@@ -68,6 +69,7 @@ func getConfig(origin string) (*config, error) {
 			if err != nil {
 				return nil, err
 			}
+			debug.FreeOSMemory()
 		}
 
 		c.buildPath = path.Join(c.topLevel, "professor", "builds")
