@@ -46,6 +46,7 @@ func main() {
 	} else if len(args) == 1 {
 		// try to resolve the ref to a commit and only build and publish that.
 		// should we support git style references? @~2 etc?
+		// I think this already does work...
 		singleRun(flags, args[0])
 	} else {
 		fmt.Printf("usage: prof {ref|sha|tag|branch}")
