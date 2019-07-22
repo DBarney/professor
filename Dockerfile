@@ -1,6 +1,6 @@
-FROM golang:alpine
+FROM golang:1.12-stretch
 
-RUN apk update && apk add --no-cache git make g++
+RUN apt-get install git make g++
 
 ADD bin/prof-linux /
 WORKDIR /go/.git

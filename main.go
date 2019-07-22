@@ -81,6 +81,24 @@ func singleRun(flags *flags, arg string) {
 
 	pub := publisher.NewPublisher(config.host, store, config.token, config.owner, config.name)
 
+	stream := build.GetStream()
+	go func() {
+		for event := range stream {
+			switch event.Status {
+			case types.Pending:
+				err := store.Create(event.Sha, event)
+				if err != nil {
+					panic(err)
+				}
+			default:
+				err := store.Append(event.Sha, event)
+				if err != nil {
+					panic(err)
+				}
+			}
+		}
+	}()
+
 	err = build.Build(sha)
 	switch err {
 	case nil:
