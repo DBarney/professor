@@ -1,18 +1,26 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path"
+	"regexp"
+	"strings"
 	"time"
 
+	"github.com/dbarney/professor/internal/publisher"
 	"github.com/dbarney/professor/types"
 
 	"github.com/google/go-github/github"
 	"golang.org/x/oauth2"
 )
+
+var repoMatch = regexp.MustCompile("git@([^:]+):([^/]+)/([^.]+)[.]git")
 
 func main() {
 
@@ -43,22 +51,36 @@ func main() {
 
 	client := github.NewClient(tc)
 
-	// once we deal with remotes not stored on github, we will get
-	// this working again
-	/*if host != "github.com" {
+	output, err := exec.Command("git", "config", "--get", "remote.origin.url").CombinedOutput()
+	origin := string(output)
+	host := "github.com"
+	owner := "someone"
+	name := "something"
+
+	if strings.HasPrefix(origin, "git@") || strings.HasPrefix(origin, "https://") {
+		parts := repoMatch.FindStringSubmatch(origin)
+		host = parts[1]
+		owner = parts[2]
+		name = parts[3]
+	} else {
+		fmt.Printf("unsupported git remote type\n")
+		os.Exit(1)
+	}
+
+	if host != "github.com" {
 		url := &url.URL{Scheme: "https", Host: host, Path: "/api/v3/"}
 		client.BaseURL = url
 		client.UploadURL = url
-	}*/
+	}
 
-	err := createStatus(client, types.Pending, ref, nil)
+	err = createStatus(client, owner, name, types.Pending, ref, nil)
 	if err != nil {
 		fmt.Printf("unable to set status to pending %v\n", err)
 	}
 	base, err := os.Getwd()
 	if err != nil {
 		fmt.Printf("unable to determine working dir: %v\n", err)
-		createStatus(client, types.Error, ref, nil)
+		createStatus(client, owner, name, types.Error, ref, nil)
 		os.Exit(1)
 	}
 	worktree := path.Join(base, ".git", "professor")
@@ -67,7 +89,7 @@ func main() {
 	err = os.MkdirAll(worktree, 0777)
 	if err != nil {
 		fmt.Printf("unable to make path: %v\n", err)
-		createStatus(client, types.Error, ref, nil)
+		createStatus(client, owner, name, types.Error, ref, nil)
 		os.Exit(1)
 	}
 	cmd := exec.Command("git", "worktree", "add", worktree, ref)
@@ -76,15 +98,20 @@ func main() {
 	fmt.Printf("create tree: %v %v\n", string(o), err)
 	if err != nil {
 		fmt.Printf("unable to create worktree %v\n", err)
-		createStatus(client, types.Error, ref, nil)
+		createStatus(client, owner, name, types.Error, ref, nil)
 		os.Exit(1)
 	}
+	body := &bytes.Buffer{}
+	writer := io.MultiWriter(os.Stdout, body)
 
+	start := time.Now()
 	cmd = exec.Command(command[0], command[1:]...)
 	cmd.Dir = worktree
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stdout
+	cmd.Stdout = writer
+	cmd.Stderr = writer
 	err = cmd.Run()
+	stop := time.Now()
+
 	result := types.Success
 	if err != nil {
 		fmt.Printf("command failed %v\n", err)
@@ -102,9 +129,19 @@ func main() {
 
 	fmt.Printf("reporting status\n")
 
+	file, err := publisher.WrapWithMarkdown(publisher.Result{
+		Output:   string(body.Bytes()),
+		Duration: stop.Sub(start),
+	}, result)
+
+	if err != nil {
+		fmt.Printf("unable to create markdown file\n")
+		os.Exit(1)
+	}
+
 	files := map[github.GistFilename]github.GistFile{
 		"BuildResults.md": github.GistFile{
-			Content: github.String("just a test"),
+			Content: github.String(file),
 		},
 	}
 
@@ -120,14 +157,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	err = createStatus(client, result, ref, gist.HTMLURL)
+	err = createStatus(client, owner, name, result, ref, gist.HTMLURL)
 	if err != nil {
 		fmt.Printf("unable to set final status %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func createStatus(client *github.Client, status types.Status, sha string, url *string) error {
+func createStatus(client *github.Client, owner, name string, status types.Status, sha string, url *string) error {
 	repoStatus := github.RepoStatus{
 		State:       github.String(status.String()),
 		Description: github.String(status.Description()),
@@ -135,6 +172,6 @@ func createStatus(client *github.Client, status types.Status, sha string, url *s
 		TargetURL:   url,
 	}
 	ctx := context.Background()
-	_, _, err := client.Repositories.CreateStatus(ctx, "dbarney", "professor", sha, &repoStatus)
+	_, _, err := client.Repositories.CreateStatus(ctx, owner, name, sha, &repoStatus)
 	return err
 }
