@@ -36,3 +36,9 @@ A lot of other settings currently aren't exposed and are set by reading the git 
 ### future ideas?
 Need to add webhook support so that polling isn't needed.
 Need to add tag fetching support.
+```
+# maybe this is how it should be run. no auto stuff, just designed to
+# be run from a hook of some sort.
+# it is up to the user where and when it runs.
+prof sha1234asdf make build
+```
