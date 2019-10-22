@@ -28,7 +28,8 @@ type Result struct {
 	Duration time.Duration
 }
 
-func wrapWithMarkdown(res Result, status types.Status) (string, error) {
+// WrapWithMarkdown converts the output into a markdown page
+func WrapWithMarkdown(res Result, status types.Status) (string, error) {
 	buf := &bytes.Buffer{}
 	var err error
 	switch status {

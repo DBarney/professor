@@ -7,7 +7,7 @@ import (
 )
 
 func TestMarkdownRendering(t *testing.T) {
-	res, err := wrapWithMarkdown(Result{Output: "this is the body"}, types.Success)
+	res, err := WrapWithMarkdown(Result{Output: "this is the body"}, types.Success)
 	if err != nil {
 		t.Fatalf("unable to render body %v", err)
 	}
@@ -15,7 +15,7 @@ func TestMarkdownRendering(t *testing.T) {
 		t.Fatalf("wrong body was created")
 	}
 
-	res, err = wrapWithMarkdown(Result{Output: "this is the body"}, types.Failure)
+	res, err = WrapWithMarkdown(Result{Output: "this is the body"}, types.Failure)
 	if err != nil {
 		t.Fatalf("unable to render body %v", err)
 	}
@@ -23,7 +23,7 @@ func TestMarkdownRendering(t *testing.T) {
 		t.Fatalf("wrong body was created")
 	}
 
-	res, err = wrapWithMarkdown(Result{Output: "this is the body"}, types.Error)
+	res, err = WrapWithMarkdown(Result{Output: "this is the body"}, types.Error)
 	if err != nil {
 		t.Fatalf("unable to render body %v", err)
 	}

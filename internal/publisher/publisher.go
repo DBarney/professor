@@ -92,7 +92,7 @@ func (p *Publisher) sendFinalStatus(sha string) error {
 	}
 	body = body[1:]
 
-	file, err := wrapWithMarkdown(Result{
+	file, err := WrapWithMarkdown(Result{
 		Output:   string(body),
 		Duration: lastEvent.Time.Sub(firstEvent.Time),
 	}, lastEvent.Status)
