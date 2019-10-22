@@ -1,287 +1,140 @@
 package main
 
 import (
-	"flag"
+	"context"
 	"fmt"
 	"os"
-	"strings"
+	"os/exec"
+	"path"
 	"time"
 
-	"github.com/dbarney/professor/internal/api"
-	"github.com/dbarney/professor/internal/builder"
-	"github.com/dbarney/professor/internal/publisher"
-	"github.com/dbarney/professor/internal/repo"
-	"github.com/dbarney/professor/internal/storage"
 	"github.com/dbarney/professor/types"
 
-	"github.com/logrusorgru/aurora"
-	"gopkg.in/src-d/go-git.v4"
-	git_config "gopkg.in/src-d/go-git.v4/config"
-	"gopkg.in/src-d/go-git.v4/plumbing"
-	"gopkg.in/src-d/go-git.v4/plumbing/transport/http"
+	"github.com/google/go-github/github"
+	"golang.org/x/oauth2"
 )
 
-type flags struct {
-	target      string
-	origin      string
-	autoPublish bool
-	build       string
-	check       time.Duration
-	makefile    string
-}
-
 func main() {
-	flags := &flags{}
-	flag.StringVar(&flags.target, "target", "test", "the target that should be built")
-	flag.StringVar(&flags.makefile, "makefile", "", "a path to a folder where a makefile should be used (the root of the repo is: '/')")
-	flag.StringVar(&flags.origin, "origin", "", "the remote to use as the origin, defaults to the local directory")
-	flag.BoolVar(&flags.autoPublish, "auto-publish", false, "trigger publishing when builds finish")
-	flag.StringVar(&flags.build, "build", "heads/*", "the refs to monitor to trigger builds")
-	flag.DurationVar(&flags.check, "check-every", time.Duration(0), "how often to poll to changes in the origin remote")
-	flag.Parse()
-	args := flag.Args()
-	if len(args) == 0 {
-		// we run in headless mode, building everything that changes
-		headlessRun(flags)
-	} else if len(args) == 1 {
-		// try to resolve the ref to a commit and only build and publish that.
-		// should we support git style references? @~2 etc?
-		singleRun(flags, args[0])
-	} else {
-		fmt.Printf("usage: prof {ref|sha|tag|branch}")
+
+	if len(os.Args) < 2 {
+		fmt.Println("usage: prof {ref} {command}")
+		os.Exit(1)
+	}
+	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		fmt.Printf("GITHUB_TOKEN was empty\n")
+		os.Exit(1)
+	}
+	user := os.Getenv("GITHUB_USER")
+	if user == "" {
+		fmt.Printf("GITHUB_USER was empty\n")
+		os.Exit(1)
+	}
+
+	ref := os.Args[1]
+	command := os.Args[2:]
+	fmt.Printf("%v %v\n", ref, command)
+
+	ctx := context.Background()
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: token},
+	)
+	tc := oauth2.NewClient(ctx, ts)
+
+	client := github.NewClient(tc)
+
+	// once we deal with remotes not stored on github, we will get
+	// this working again
+	/*if host != "github.com" {
+		url := &url.URL{Scheme: "https", Host: host, Path: "/api/v3/"}
+		client.BaseURL = url
+		client.UploadURL = url
+	}*/
+
+	err := createStatus(client, types.Pending, ref, nil)
+	if err != nil {
+		fmt.Printf("unable to set status to pending %v\n", err)
+	}
+	base, err := os.Getwd()
+	if err != nil {
+		fmt.Printf("unable to determine working dir: %v\n", err)
+		createStatus(client, types.Error, ref, nil)
+		os.Exit(1)
+	}
+	worktree := path.Join(base, ".git", "professor")
+
+	os.RemoveAll(worktree)
+	err = os.MkdirAll(worktree, 0777)
+	if err != nil {
+		fmt.Printf("unable to make path: %v\n", err)
+		createStatus(client, types.Error, ref, nil)
+		os.Exit(1)
+	}
+	cmd := exec.Command("git", "worktree", "add", worktree, ref)
+
+	o, err := cmd.CombinedOutput()
+	fmt.Printf("create tree: %v %v\n", string(o), err)
+	if err != nil {
+		fmt.Printf("unable to create worktree %v\n", err)
+		createStatus(client, types.Error, ref, nil)
+		os.Exit(1)
+	}
+
+	cmd = exec.Command(command[0], command[1:]...)
+	cmd.Dir = worktree
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stdout
+	err = cmd.Run()
+	result := types.Success
+	if err != nil {
+		fmt.Printf("command failed %v\n", err)
+		result = types.Failure
+	}
+
+	err = os.RemoveAll(worktree)
+	if err != nil {
+		fmt.Printf("clean up failed: %v\n", err)
+	}
+	cmd = exec.Command("git", "worktree", "prune")
+
+	o, err = cmd.CombinedOutput()
+	fmt.Printf("prune tree: %v %v\n", string(o), err)
+
+	fmt.Printf("reporting status\n")
+
+	files := map[github.GistFilename]github.GistFile{
+		"BuildResults.md": github.GistFile{
+			Content: github.String("just a test"),
+		},
+	}
+
+	description := fmt.Sprintf("Professor Build for %v: %v", ref, time.Now().Format("Mon Jan 2 15:04:05 MST 2006"))
+	gist := &github.Gist{
+		Description: github.String(description),
+		Public:      github.Bool(true),
+		Files:       files,
+	}
+	gist, _, err = client.Gists.Create(ctx, gist)
+	if err != nil {
+		fmt.Printf("unable to create gist %v\n", err)
+		os.Exit(1)
+	}
+
+	err = createStatus(client, result, ref, gist.HTMLURL)
+	if err != nil {
+		fmt.Printf("unable to set final status %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func singleRun(flags *flags, arg string) {
-	fmt.Printf("running single build: %v\n", arg)
-	config, err := getConfig(flags.origin)
-	if err != nil {
-		panic(err)
+func createStatus(client *github.Client, status types.Status, sha string, url *string) error {
+	repoStatus := github.RepoStatus{
+		State:       github.String(status.String()),
+		Description: github.String(status.Description()),
+		Context:     github.String("professor/local-integration"),
+		TargetURL:   url,
 	}
-
-	fmt.Printf("opening repo.\n")
-	original, err := git.PlainOpen(config.topLevel)
-	if err != nil {
-		panic(err)
-	}
-
-	sha, err := argToSha(original, arg)
-	if err != nil {
-		panic(err)
-	}
-
-	// start the store
-	store, err := storage.New(config.workingPath)
-	if err != nil {
-		panic(err)
-	}
-
-	build := builder.NewBuilder(original, flags.makefile, flags.target, config.buildPath, config.workingPath)
-
-	pub := publisher.NewPublisher(config.host, store, config.token, config.owner, config.name)
-
-	stream := build.GetStream()
-	go func() {
-		for event := range stream {
-			switch event.Status {
-			case types.Pending:
-				err := store.Create(event.Sha, event)
-				if err != nil {
-					panic(err)
-				}
-			default:
-				err := store.Append(event.Sha, event)
-				if err != nil {
-					panic(err)
-				}
-			}
-		}
-	}()
-
-	err = build.Build(sha)
-	switch err {
-	case nil:
-		fmt.Println(aurora.Green("build was sucessful!"))
-	case builder.ErrNoMakefile:
-		fmt.Println("no Makefile was found skipping tests.")
-		os.Exit(1)
-	case builder.ErrNoChanges:
-		fmt.Println(aurora.Yellow("no changes were detected."))
-		os.Exit(0)
-	default:
-		fmt.Printf("%v,", err)
-		fmt.Printf("%v %v\n", aurora.Red("build Failed"), err)
-	}
-
-	err = pub.Publish(sha)
-	switch err {
-	case nil:
-		fmt.Println(aurora.Green("sucessfully published build results."))
-	default:
-		fmt.Printf("%v %v", aurora.Red("unable to publish results:"), err)
-		os.Exit(1)
-	}
-
-}
-
-func headlessRun(flags *flags) {
-	config, err := getConfig(flags.origin)
-	if err != nil {
-		panic(err)
-	}
-	// watch for changes on local branches and remote branches
-	repository := repo.New(config.gitFolder)
-	local, err := repository.WatchLocalBranches(flags.build)
-	if err != nil {
-		panic(err)
-	}
-	var source chan *repo.BranchEvent
-	var remote <-chan *repo.BranchEvent
-	if !flags.autoPublish {
-		remote, err = repository.WatchRemoteBranches()
-		if err != nil {
-			panic(err)
-		}
-	} else {
-		source = make(chan *repo.BranchEvent)
-		remote = source
-	}
-
-	fmt.Printf("opening repo.\n")
-	original, err := git.PlainOpen(config.topLevel)
-	if err != nil {
-		panic(err)
-	}
-	if flags.check != 0 {
-		ticker := time.NewTicker(flags.check)
-		defer ticker.Stop()
-		refspec := buildRefSepc(flags.build)
-		go func() {
-			for range ticker.C {
-				fmt.Println("checking for changes")
-				err := original.Fetch(&git.FetchOptions{
-					RefSpecs: []git_config.RefSpec{git_config.RefSpec(refspec)},
-					Auth: &http.BasicAuth{
-						Username: "dbarney",
-						Password: config.token,
-					}})
-				fmt.Printf("fetched changes %v\n", err)
-			}
-		}()
-	}
-
-	// start the store
-	store, err := storage.New(config.workingPath)
-	if err != nil {
-		panic(err)
-	}
-
-	// start the API
-	s := make(chan *types.Event)
-	api.Run(s, store)
-
-	// start the build process
-	build := builder.NewBuilder(original, flags.makefile, flags.target, config.buildPath, config.workingPath)
-	stream := build.GetStream()
-	go handleLocalChanges(local, build, source)
-
-	go func() {
-		for event := range stream {
-			switch event.Status {
-			case types.Pending:
-				err := store.Create(event.Sha, event)
-				if err != nil {
-					panic(err)
-				}
-			default:
-				err := store.Append(event.Sha, event)
-				if err != nil {
-					panic(err)
-				}
-			}
-			s <- event
-		}
-	}()
-	// start the reporting process
-	pub := publisher.NewPublisher(config.host, store, config.token, config.owner, config.name)
-	handleRemoteChanges(remote, pub)
-}
-
-func handleRemoteChanges(changes <-chan *repo.BranchEvent, pub *publisher.Publisher) {
-	for c := range changes {
-		fmt.Printf("detected a remote being updated %v.\n", c.SHA)
-		go func(sha string) {
-			err := pub.Publish(sha)
-			if os.IsNotExist(err) {
-				return
-			} else if err == nil {
-				fmt.Println(aurora.Green("sucessfully published build results."))
-			} else {
-				fmt.Printf("%v %v\n", aurora.Red("unable to publish results:"), err)
-			}
-		}(c.SHA)
-	}
-}
-
-func handleLocalChanges(changes <-chan *repo.BranchEvent, build *builder.Builder, next chan<- *repo.BranchEvent) {
-	for c := range changes {
-		fmt.Printf("detected a local branch being updated, building %v\n", c.SHA)
-		err := build.Build(c.SHA)
-		switch err {
-		case nil:
-			fmt.Println(aurora.Green("build was sucessful!"))
-		case builder.ErrNoMakefile:
-			fmt.Println("no Makefile was found skipping tests.")
-			continue
-		case builder.ErrNoChanges:
-			fmt.Println(aurora.Yellow("no changes were detected."))
-			continue
-		default:
-			fmt.Printf("%v %v\n", aurora.Red("build Failed."), err)
-		}
-		// forward the trigger if there is a next step
-		if next != nil {
-			next <- c
-		}
-	}
-}
-
-func buildRefSepc(build string) string {
-	switch {
-	case strings.HasPrefix(build, "heads/"):
-		build = strings.TrimPrefix(build, "heads/")
-		return fmt.Sprintf("+refs/heads/%v:refs/remotes/origin/%v", build, build)
-	case strings.HasPrefix(build, "remotes/origin/"):
-		build = strings.TrimPrefix(build, "remotes/origin/")
-		return fmt.Sprintf("+refs/heads/%v:refs/remotes/origin/%v", build, build)
-	}
-	// don't really know what to do with this
-	return "+refs/heads/*:refs/remotes/origin/*"
-}
-
-// try and take a string and discover if it is something representing
-// a sha in the git repositoy
-func argToSha(repo *git.Repository, arg string) (string, error) {
-	tag, err := repo.Tag(arg)
-	if err == nil {
-		return tag.Hash().String(), nil
-	}
-	// is it a local branch
-	name := plumbing.ReferenceName(fmt.Sprintf("refs/heads/%v", arg))
-	ref, err := repo.Reference(name, true)
-	if err == nil {
-		return ref.Hash().String(), nil
-	}
-	// is it a remote branch
-	name = plumbing.ReferenceName(fmt.Sprintf("refs/remotes/%v", arg))
-	ref, err = repo.Reference(name, true)
-	if err == nil {
-		return ref.Hash().String(), nil
-	}
-	_, err = repo.CommitObject(plumbing.NewHash(arg))
-	if err == nil {
-		return arg, nil
-	}
-	return "", fmt.Errorf("%v was not a tag, a ref or a sha.\n", arg)
+	ctx := context.Background()
+	_, _, err := client.Repositories.CreateStatus(ctx, "dbarney", "professor", sha, &repoStatus)
+	return err
 }
